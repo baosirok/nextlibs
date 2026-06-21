@@ -100,6 +100,12 @@ public final class FfmpegLibrary {
    */
   @Nullable
   /* package */ static String getCodecName(String mimeType) {
+    // 去掉 MIME 类型的参数部分 (;profile=xxx)
+    int paramIndex = mimeType.indexOf(';');
+    if (paramIndex != -1) {
+      mimeType = mimeType.substring(0, paramIndex);
+    }
+
     return switch (mimeType) {
       // Audio codecs
       case MimeTypes.AUDIO_AAC -> "aac";
@@ -116,7 +122,6 @@ public final class FfmpegLibrary {
       case MimeTypes.AUDIO_ALAC -> "alac";
       case MimeTypes.AUDIO_MLAW -> "pcm_mulaw";
       case MimeTypes.AUDIO_ALAW -> "pcm_alaw";
-
       // Video codecs
       case MimeTypes.VIDEO_H264 -> "h264";
       case MimeTypes.VIDEO_H265 -> "hevc";
