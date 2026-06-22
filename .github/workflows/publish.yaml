@@ -35,6 +35,9 @@ jobs:
       - name: Build Release
         run: ./gradlew assembleRelease
 
+      - name: List AAR files
+        run: find . -name "*.aar" -type f
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         env:
