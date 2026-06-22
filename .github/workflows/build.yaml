@@ -1,8 +1,9 @@
 name: Build nextlib
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ 1.10.0-0.12.1 ]
   pull_request:
 concurrency:
   group: build-${{ github.ref }}
