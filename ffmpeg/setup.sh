@@ -18,7 +18,7 @@ MBEDTLS_DIR=$SOURCES_DIR/mbedtls-$MBEDTLS_VERSION
 ANDROID_ABIS="x86 x86_64 armeabi-v7a arm64-v8a"
 ANDROID_PLATFORM=21
 ENABLED_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd h264 hevc mpeg2video mpegvideo libvpx_vp8 libvpx_vp9"
-JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.pysicalcpu || echo 4)
+JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)
 
 # Set up host platform variables
 HOST_PLATFORM="linux-x86_64"
@@ -299,22 +299,22 @@ function buildFfmpeg() {
   popd
 }
 
-  if [[ ! -d "$MBEDTLS_DIR" ]]; then
-    downloadMbedTLS
-  fi
-
-  # Download Vpx source code if it doesn't exist
-  if [[ ! -d "$VPX_DIR" ]]; then
-    downloadLibVpx
-  fi
-
-  # Download Ffmpeg source code if it doesn't exist
-  if [[ ! -d "$FFMPEG_DIR" ]]; then
-    downloadFfmpeg
-  fi
-
-  # Building library
-  buildMbedTLS
-  buildLibVpx
-  buildFfmpeg
+# Download mbedtls source code if it doesn't exist
+if [[ ! -d "$MBEDTLS_DIR" ]]; then
+  downloadMbedTLS
 fi
+
+# Download Vpx source code if it doesn't exist
+if [[ ! -d "$VPX_DIR" ]]; then
+  downloadLibVpx
+fi
+
+# Download Ffmpeg source code if it doesn't exist
+if [[ ! -d "$FFMPEG_DIR" ]]; then
+  downloadFfmpeg
+fi
+
+# Building library
+buildMbedTLS
+buildLibVpx
+buildFfmpeg
