@@ -90,37 +90,44 @@ function downloadFfmpeg() {
 function buildLibVpx() {
   pushd $VPX_DIR
 
-  VPX_AS=${TOOLCHAIN_PREFIX}/bin/llvm-as
-  
   for ABI in $ANDROID_ABIS; do
     echo "Building libvpx for $ABI..."
     
-    # 清理之前的配置
+    # 彻底清理之前的配置
     make distclean 2>/dev/null || true
+    rm -f .config.mk config.log 2>/dev/null || true
+    
+    unset CC CXX LD AR AS STRIP NM CFLAGS CXXFLAGS ASFLAGS LDFLAGS
     
     case $ABI in
     armeabi-v7a)
       EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
       TOOLCHAIN=armv7a-linux-androideabi21-
-      # 只在 CFLAGS 中添加编译器标志，不影响汇编器
-      EXTRA_CFLAGS="-O3 -march=armv7-a -mfpu=neon -mfloat-abi=softfp -I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
+      VPX_AS=${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang
+      # 编译器优化标志
+      BUILD_CFLAGS="-O3 -march=armv7-a -mfpu=neon -mfloat-abi=softfp -I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
+      BUILD_ASFLAGS=""
       ;;
     arm64-v8a)
       EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc"
       TOOLCHAIN=aarch64-linux-android21-
-      EXTRA_CFLAGS="-O3 -march=armv8-a -I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
+      VPX_AS=${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang
+      BUILD_CFLAGS="-O3 -march=armv8-a -I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
+      BUILD_ASFLAGS=""
       ;;
     x86)
       EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=i686-linux-android21-
-      EXTRA_CFLAGS="-O3 -march=i686"
+      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
+      BUILD_CFLAGS="-O3 -march=i686"
+      BUILD_ASFLAGS=""
       ;;
     x86_64)
       EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --enable-pic"
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=x86_64-linux-android21-
-      EXTRA_CFLAGS="-O3 -march=x86-64"
+      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
+      BUILD_CFLAGS="-O3 -march=x86-64"
+      BUILD_ASFLAGS=""
       ;;
     *)
       echo "Unsupported architecture: $ABI"
@@ -128,18 +135,18 @@ function buildLibVpx() {
       ;;
     esac
 
-    # 使用环境变量而不是 configure 参数传递 CFLAGS
-    export CC=${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang
-    export CXX=${CC}++
-    export LD=${CC}
-    export AR=${TOOLCHAIN_PREFIX}/bin/llvm-ar
-    export AS=${VPX_AS}
-    export STRIP=${TOOLCHAIN_PREFIX}/bin/llvm-strip
-    export NM=${TOOLCHAIN_PREFIX}/bin/llvm-nm
-    export CFLAGS="$EXTRA_CFLAGS"
-    export CXXFLAGS="$EXTRA_CFLAGS"
-    export LDFLAGS="-Wl,-z,max-page-size=16384"
-    
+    # 分别设置编译器和汇编器环境变量
+    CC="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang" \
+    CXX="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang++" \
+    LD="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang" \
+    AR="${TOOLCHAIN_PREFIX}/bin/llvm-ar" \
+    AS="${VPX_AS}" \
+    STRIP="${TOOLCHAIN_PREFIX}/bin/llvm-strip" \
+    NM="${TOOLCHAIN_PREFIX}/bin/llvm-nm" \
+    CFLAGS="${BUILD_CFLAGS}" \
+    CXXFLAGS="${BUILD_CFLAGS}" \
+    ASFLAGS="${BUILD_ASFLAGS}" \
+    LDFLAGS="-Wl,-z,max-page-size=16384" \
     ./configure \
       --prefix=$BUILD_DIR/external/$ABI \
       --libc="${TOOLCHAIN_PREFIX}/sysroot" \
@@ -149,6 +156,7 @@ function buildLibVpx() {
       --disable-shared \
       --disable-examples \
       --disable-docs \
+      --disable-unit-tests \
       --enable-realtime-only \
       --enable-install-libs \
       --enable-multithread \
@@ -160,6 +168,7 @@ function buildLibVpx() {
 
     if [ $? -ne 0 ]; then
       echo "libvpx configure failed for $ABI"
+      cat config.log
       exit 1
     fi
 
@@ -173,14 +182,12 @@ function buildLibVpx() {
     
     make install
     
-    # 清理环境变量
-    unset CC CXX LD AR AS STRIP NM CFLAGS CXXFLAGS LDFLAGS
-    
     echo "✓ libvpx built successfully for $ABI"
   done
   
   popd
 }
+
 
 function buildMbedTLS() {
     pushd $MBEDTLS_DIR
