@@ -183,52 +183,54 @@ function buildFfmpeg() {
   
   COMMON_OPTIONS=""
   
-  # 添加标准解码器（去掉 _fixed 定点版本）
-  ALL_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd \
-    mp3float mp3on4float pcm_s16le pcm_s24le pcm_f32le"
+  # 添加标准解码器
+  ALL_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd mp3float mp3on4float pcm_s16le pcm_s24le pcm_f32le"
     
   for decoder in $ALL_DECODERS; do
     COMMON_OPTIONS="${COMMON_OPTIONS} --enable-decoder=${decoder}"
   done
 
-  # 额外启用编码器（用于转码场景）
-  for encoder in aac ac3 eac3 mp3 vorbis opus; do
+  # 额外启用编码器
+  for encoder in aac ac3 eac3 mp3lame vorbis opus; do
     COMMON_OPTIONS="${COMMON_OPTIONS} --enable-encoder=${encoder}"
   done
 
   for ABI in $ANDROID_ABIS; do
+    EXTRA_BUILD_CONFIGURATION_FLAGS=""
+    
     case $ABI in
     armeabi-v7a)
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      # 安全优化：去掉 -ffast-math，保留 NEON 和向量化
-      EXTRA_CFLAGS="-O3 -fPIC -march=armv7-a -mfpu=neon -mfloat-abi=softfp -ftree-vectorize -funroll-loops -fomit-frame-pointer"
+      EXTRA_CFLAGS="-O3 -fPIC -march=armv7-a -mfpu=neon -mfloat-abi=softfp -ftree-vectorize"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      EXTRA_CFLAGS="-O3 -fPIC -march=armv8-a+fp+simd -ftree-vectorize -funroll-loops -fomit-frame-pointer"
+      EXTRA_CFLAGS="-O3 -fPIC -march=armv8-a -ftree-vectorize"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
       CPU=i686
       ARCH=i686
-      EXTRA_CFLAGS="-O3 -fPIC -march=i686 -mfpmath=sse -msse3 -ftree-vectorize -funroll-loops -fomit-frame-pointer"
-      EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm --enable-x86asm"
+      EXTRA_CFLAGS="-O3 -fPIC -march=i686 -msse3 -mfpmath=sse"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm"
       ;;
     x86_64)
       TOOLCHAIN=x86_64-linux-android21-
       CPU=x86_64
       ARCH=x86_64
-      EXTRA_CFLAGS="-O3 -fPIC -march=x86-64 -mfpmath=sse -msse4.2 -ftree-vectorize -funroll-loops -fomit-frame-pointer"
+      EXTRA_CFLAGS="-O3 -fPIC -march=x86-64 -msse4.2 -mfpmath=sse"
       ;;
     esac
 
     DEP_CFLAGS="-I$BUILD_DIR/external/$ABI/include"
     DEP_LD_FLAGS="-L$BUILD_DIR/external/$ABI/lib"
 
+    echo "Configuring FFmpeg for $ABI ($ARCH)..."
+    
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -240,7 +242,7 @@ function buildFfmpeg() {
       --ranlib="${TOOLCHAIN_PREFIX}/bin/llvm-ranlib" \
       --strip="${TOOLCHAIN_PREFIX}/bin/llvm-strip" \
       --extra-cflags="$EXTRA_CFLAGS $DEP_CFLAGS" \
-      --extra-ldflags="$DEP_LD_FLAGS -Wl,-z,max-page-size=16384 -pthread" \
+      --extra-ldflags="$DEP_LD_FLAGS -Wl,-z,max-page-size=16384" \
       --pkg-config="$(which pkg-config)" \
       --target-os=android \
       --enable-shared \
@@ -254,8 +256,6 @@ function buildFfmpeg() {
       --disable-avfilter \
       --disable-symver \
       --enable-parsers \
-      --disable-aac-ps \         
-      --disable-aac-psy \         
       --enable-demuxers \
       --enable-swresample \
       --enable-avformat \
@@ -278,9 +278,20 @@ function buildFfmpeg() {
       ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
       ${COMMON_OPTIONS}
 
-    echo "Building FFmpeg for $ARCH with audio optimizations..."
+    if [ $? -ne 0 ]; then
+      echo "FFmpeg configure failed for $ABI"
+      exit 1
+    fi
+
+    echo "Building FFmpeg for $ABI..."
     make clean
     make -j$JOBS
+    
+    if [ $? -ne 0 ]; then
+      echo "FFmpeg build failed for $ABI"
+      exit 1
+    fi
+    
     make install
 
     OUTPUT_LIB=${OUTPUT_DIR}/lib/${ABI}
@@ -290,9 +301,13 @@ function buildFfmpeg() {
     OUTPUT_HEADERS=${OUTPUT_DIR}/include/${ABI}
     mkdir -p "${OUTPUT_HEADERS}"
     cp -r "${BUILD_DIR}"/"${ABI}"/include/* "${OUTPUT_HEADERS}"
+    
+    echo "✓ FFmpeg built successfully for $ABI"
   done
+  
   popd
 }
+
 if [[ ! -d "$OUTPUT_DIR" && ! -d "$BUILD_DIR" ]]; then
   # Download MbedTLS source code if it doesn't exist
   if [[ ! -d "$MBEDTLS_DIR" ]]; then
