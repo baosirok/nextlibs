@@ -102,21 +102,25 @@ function buildLibVpx() {
       EXTRA_BUILD_FLAGS="--target=armv7-android-gcc --disable-runtime-cpu-detect"
       TOOLCHAIN_NAME=armv7a-linux-androideabi21
       BUILD_CFLAGS="-O3 -march=armv7-a -mfpu=neon -mfloat-abi=softfp"
+      USE_YASM=false
       ;;
     arm64-v8a)
       EXTRA_BUILD_FLAGS="--target=armv8-android-gcc --disable-runtime-cpu-detect"
       TOOLCHAIN_NAME=aarch64-linux-android21
       BUILD_CFLAGS="-O3 -march=armv8-a"
+      USE_YASM=false
       ;;
     x86)
       EXTRA_BUILD_FLAGS="--target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2"
       TOOLCHAIN_NAME=i686-linux-android21
       BUILD_CFLAGS="-O3 -march=i686"
+      USE_YASM=true
       ;;
     x86_64)
       EXTRA_BUILD_FLAGS="--target=x86_64-android-gcc"
       TOOLCHAIN_NAME=x86_64-linux-android21
       BUILD_CFLAGS="-O3 -march=x86-64"
+      USE_YASM=true
       ;;
     *)
       echo "Unsupported architecture: $ABI"
@@ -131,10 +135,16 @@ function buildLibVpx() {
     export LD="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN_NAME}-clang"
     export STRIP="${TOOLCHAIN_PREFIX}/bin/llvm-strip"
     export NM="${TOOLCHAIN_PREFIX}/bin/llvm-nm"
-    export AS="${CC}"
     
-    # 关键：为汇编器设置正确的标志
-    export ASFLAGS="-c"
+    # 为 x86/x86_64 使用 yasm，为 ARM 使用 clang
+    if [ "$USE_YASM" = true ]; then
+      export AS="${TOOLCHAIN_PREFIX}/bin/yasm"
+      export ASFLAGS=""
+    else
+      export AS="${CC}"
+      export ASFLAGS="-c"
+    fi
+    
     export CFLAGS="${BUILD_CFLAGS}"
     export CXXFLAGS="${BUILD_CFLAGS}"
     export LDFLAGS="-Wl,-z,max-page-size=16384"
@@ -167,7 +177,13 @@ function buildLibVpx() {
     fi
 
     make clean
-    make -j$JOBS
+    
+    # 为 x86 构建时显示详细输出以便调试
+    if [ "$USE_YASM" = true ]; then
+      make -j$JOBS V=1
+    else
+      make -j$JOBS
+    fi
     
     if [ $? -ne 0 ]; then
       echo "libvpx build failed for $ABI"
@@ -184,6 +200,7 @@ function buildLibVpx() {
   
   popd
 }
+
 
 
 
