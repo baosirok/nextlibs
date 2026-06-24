@@ -453,11 +453,5 @@ echo "========================================="
 echo "Output directory: $OUTPUT_DIR"
 echo "Libraries: $OUTPUT_DIR/lib/{armeabi-v7a,arm64-v8a,x86,x86_64}"
 echo "Headers: $OUTPUT_DIR/include/{armeabi-v7a,arm64-v8a,x86,x86_64}"
-echo ""
-echo "Library details:"
-for ABI in $ANDROID_ABIS; do
-  echo "  $ABI:"
-  ls -lh "${OUTPUT_DIR}/lib/${ABI}/"*.so 2>/dev/null | awk '{print "    " \$9 " - " \$5}'
-done
 echo "========================================="
 
