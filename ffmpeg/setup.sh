@@ -93,41 +93,30 @@ function buildLibVpx() {
   for ABI in $ANDROID_ABIS; do
     echo "Building libvpx for $ABI..."
     
-    # 彻底清理之前的配置
+    # 彻底清理
     make distclean 2>/dev/null || true
-    rm -f .config.mk config.log 2>/dev/null || true
-    
-    unset CC CXX LD AR AS STRIP NM CFLAGS CXXFLAGS ASFLAGS LDFLAGS
+    rm -rf .config.mk config.log 2>/dev/null || true
     
     case $ABI in
     armeabi-v7a)
-      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
-      TOOLCHAIN=armv7a-linux-androideabi21-
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang
-      # 编译器优化标志
-      BUILD_CFLAGS="-O3 -march=armv7-a -mfpu=neon -mfloat-abi=softfp -I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
-      BUILD_ASFLAGS=""
+      EXTRA_BUILD_FLAGS="--target=armv7-android-gcc --disable-runtime-cpu-detect"
+      TOOLCHAIN_NAME=armv7a-linux-androideabi21
+      BUILD_CFLAGS="-O3 -march=armv7-a -mfpu=neon -mfloat-abi=softfp"
       ;;
     arm64-v8a)
-      EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc"
-      TOOLCHAIN=aarch64-linux-android21-
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang
-      BUILD_CFLAGS="-O3 -march=armv8-a -I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
-      BUILD_ASFLAGS=""
+      EXTRA_BUILD_FLAGS="--target=armv8-android-gcc --disable-runtime-cpu-detect"
+      TOOLCHAIN_NAME=aarch64-linux-android21
+      BUILD_CFLAGS="-O3 -march=armv8-a"
       ;;
     x86)
-      EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
-      TOOLCHAIN=i686-linux-android21-
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
+      EXTRA_BUILD_FLAGS="--target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2"
+      TOOLCHAIN_NAME=i686-linux-android21
       BUILD_CFLAGS="-O3 -march=i686"
-      BUILD_ASFLAGS=""
       ;;
     x86_64)
-      EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --enable-pic"
-      TOOLCHAIN=x86_64-linux-android21-
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
+      EXTRA_BUILD_FLAGS="--target=x86_64-android-gcc"
+      TOOLCHAIN_NAME=x86_64-linux-android21
       BUILD_CFLAGS="-O3 -march=x86-64"
-      BUILD_ASFLAGS=""
       ;;
     *)
       echo "Unsupported architecture: $ABI"
@@ -135,36 +124,41 @@ function buildLibVpx() {
       ;;
     esac
 
-    # 分别设置编译器和汇编器环境变量
-    CC="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang" \
-    CXX="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang++" \
-    LD="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang" \
-    AR="${TOOLCHAIN_PREFIX}/bin/llvm-ar" \
-    AS="${VPX_AS}" \
-    STRIP="${TOOLCHAIN_PREFIX}/bin/llvm-strip" \
-    NM="${TOOLCHAIN_PREFIX}/bin/llvm-nm" \
-    CFLAGS="${BUILD_CFLAGS}" \
-    CXXFLAGS="${BUILD_CFLAGS}" \
-    ASFLAGS="${BUILD_ASFLAGS}" \
-    LDFLAGS="-Wl,-z,max-page-size=16384" \
+    # 设置编译器路径
+    export CC="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN_NAME}-clang"
+    export CXX="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN_NAME}-clang++"
+    export AR="${TOOLCHAIN_PREFIX}/bin/llvm-ar"
+    export LD="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN_NAME}-clang"
+    export STRIP="${TOOLCHAIN_PREFIX}/bin/llvm-strip"
+    export NM="${TOOLCHAIN_PREFIX}/bin/llvm-nm"
+    export AS="${CC}"
+    
+    # 关键：为汇编器设置正确的标志
+    export ASFLAGS="-c"
+    export CFLAGS="${BUILD_CFLAGS}"
+    export CXXFLAGS="${BUILD_CFLAGS}"
+    export LDFLAGS="-Wl,-z,max-page-size=16384"
+
     ./configure \
-      --prefix=$BUILD_DIR/external/$ABI \
-      --libc="${TOOLCHAIN_PREFIX}/sysroot" \
+      --prefix="${BUILD_DIR}/external/${ABI}" \
+      --sdk-path="${TOOLCHAIN_PREFIX}/sysroot" \
+      ${EXTRA_BUILD_FLAGS} \
       --enable-vp8 \
       --enable-vp9 \
       --enable-static \
       --disable-shared \
       --disable-examples \
+      --disable-tools \
       --disable-docs \
       --disable-unit-tests \
+      --enable-pic \
       --enable-realtime-only \
-      --enable-install-libs \
       --enable-multithread \
+      --disable-install-bins \
+      --disable-install-docs \
+      --enable-install-libs \
       --disable-webm-io \
-      --disable-libyuv \
-      --enable-better-hw-compatibility \
-      --enable-runtime-cpu-detect \
-      ${EXTRA_BUILD_FLAGS}
+      --disable-libyuv
 
     if [ $? -ne 0 ]; then
       echo "libvpx configure failed for $ABI"
@@ -182,11 +176,15 @@ function buildLibVpx() {
     
     make install
     
+    # 清理环境变量
+    unset CC CXX AR LD STRIP NM AS ASFLAGS CFLAGS CXXFLAGS LDFLAGS
+    
     echo "✓ libvpx built successfully for $ABI"
   done
   
   popd
 }
+
 
 
 function buildMbedTLS() {
