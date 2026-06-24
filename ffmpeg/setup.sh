@@ -183,8 +183,8 @@ function buildFfmpeg() {
   
   COMMON_OPTIONS=""
   
-  # 添加标准解码器
-  ALL_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd mp3float mp3on4float pcm_s16le pcm_s24le pcm_f32le"
+ # 音频解码器 - 移除可能有问题的编码器
+  ALL_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd pcm_s16le pcm_s24le pcm_f32le"
     
   for decoder in $ALL_DECODERS; do
     COMMON_OPTIONS="${COMMON_OPTIONS} --enable-decoder=${decoder}"
