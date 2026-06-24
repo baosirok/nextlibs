@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e  # 遇到错误立即退出
+set -u  # 使用未定义变量时报错
 
 # Versions
 VPX_VERSION=1.13.0
@@ -15,7 +17,7 @@ VPX_DIR=$SOURCES_DIR/libvpx-$VPX_VERSION
 MBEDTLS_DIR=$SOURCES_DIR/mbedtls-$MBEDTLS_VERSION
 
 # Configuration
-ANDROID_ABIS="x86 x86_64 armeabi-v7a arm64-v8a"
+ANDROID_ABIS="armeabi-v7a arm64-v8a x86 x86_64"
 ANDROID_PLATFORM=21
 ENABLED_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd h264 hevc mpeg2video mpegvideo libvpx_vp8 libvpx_vp9"
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)
@@ -92,6 +94,14 @@ function buildLibVpx() {
 
   VPX_AS=${TOOLCHAIN_PREFIX}/bin/llvm-as
   for ABI in $ANDROID_ABIS; do
+    echo "========================================="
+    echo "Building libvpx for $ABI..."
+    echo "========================================="
+    
+    # 关键修复：每次循环前彻底清理
+    make distclean 2>/dev/null || true
+    rm -f .config.mk config.log 2>/dev/null || true
+    
     case $ABI in
     armeabi-v7a)
       EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc --disable-neon"
@@ -143,9 +153,24 @@ function buildLibVpx() {
       --disable-runtime-cpu-detect \
       ${EXTRA_BUILD_FLAGS}
 
+    # 错误检查
+    if [ $? -ne 0 ]; then
+      echo "ERROR: libvpx configure failed for $ABI"
+      [ -f config.log ] && cat config.log
+      exit 1
+    fi
+
     make clean
     make -j$JOBS
+    
+    if [ $? -ne 0 ]; then
+      echo "ERROR: libvpx build failed for $ABI"
+      exit 1
+    fi
+    
     make install
+    echo "✓ libvpx built successfully for $ABI"
+    echo ""
   done
   popd
 }
@@ -154,6 +179,9 @@ function buildMbedTLS() {
     pushd $MBEDTLS_DIR
 
     for ABI in $ANDROID_ABIS; do
+      echo "========================================="
+      echo "Building mbedTLS for $ABI..."
+      echo "========================================="
 
       CMAKE_BUILD_DIR=$MBEDTLS_DIR/mbedtls_build_${ABI}
       rm -rf ${CMAKE_BUILD_DIR}
@@ -168,10 +196,23 @@ function buildMbedTLS() {
        -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
        -DENABLE_TESTING=0
 
-      make -j$JOBS
-      make install
+      if [ $? -ne 0 ]; then
+        echo "ERROR: mbedTLS configure failed for $ABI"
+        exit 1
+      fi
 
+      make -j$JOBS
+      
+      if [ $? -ne 0 ]; then
+        echo "ERROR: mbedTLS build failed for $ABI"
+        exit 1
+      fi
+      
+      make install
+      echo "✓ mbedTLS built successfully for $ABI"
+      echo ""
     done
+    
     popd
 }
 
@@ -187,6 +228,9 @@ function buildFfmpeg() {
 
   # Build FFmpeg for each architecture and platform
   for ABI in $ANDROID_ABIS; do
+    echo "========================================="
+    echo "Building FFmpeg for $ABI..."
+    echo "========================================="
 
     # 为每个 ABI 创建独立的构建目录
     FFMPEG_BUILD_DIR=$BUILD_DIR/ffmpeg-build-$ABI
@@ -194,6 +238,7 @@ function buildFfmpeg() {
     mkdir -p $FFMPEG_BUILD_DIR
     
     # 复制源码到构建目录
+    echo "Copying FFmpeg source to build directory..."
     cp -r $FFMPEG_DIR/* $FFMPEG_BUILD_DIR/
     
     pushd $FFMPEG_BUILD_DIR
@@ -290,9 +335,21 @@ function buildFfmpeg() {
       ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
       ${COMMON_OPTIONS}
 
+    if [ $? -ne 0 ]; then
+      echo "ERROR: FFmpeg configure failed for $ABI"
+      cat ffbuild/config.log
+      exit 1
+    fi
+
     # Build FFmpeg
     echo "Building FFmpeg for $ARCH..."
     make -j$JOBS
+    
+    if [ $? -ne 0 ]; then
+      echo "ERROR: FFmpeg build failed for $ABI"
+      exit 1
+    fi
+    
     make install
 
     OUTPUT_LIB=${OUTPUT_DIR}/lib/${ABI}
@@ -304,9 +361,19 @@ function buildFfmpeg() {
     cp -r "${BUILD_DIR}"/"${ABI}"/include/* "${OUTPUT_HEADERS}"
 
     popd
+    
+    echo "✓ FFmpeg built successfully for $ABI"
+    echo ""
   done
 }
 
+
+echo "========================================="
+echo "Starting build process"
+echo "Target ABIs: $ANDROID_ABIS"
+echo "Jobs: $JOBS"
+echo "========================================="
+echo ""
 
 # Download mbedtls source code if it doesn't exist
 if [[ ! -d "$MBEDTLS_DIR" ]]; then
@@ -324,6 +391,20 @@ if [[ ! -d "$FFMPEG_DIR" ]]; then
 fi
 
 # Building library
+echo "[1/3] Building mbedTLS..."
 buildMbedTLS
+
+echo "[2/3] Building libvpx..."
 buildLibVpx
+
+echo "[3/3] Building FFmpeg..."
 buildFfmpeg
+
+echo ""
+echo "========================================="
+echo "✓ Build completed successfully!"
+echo "========================================="
+echo "Output directory: $OUTPUT_DIR"
+echo "Libraries: $OUTPUT_DIR/lib/{armeabi-v7a,arm64-v8a,x86,x86_64}"
+echo "Headers: $OUTPUT_DIR/include/{armeabi-v7a,arm64-v8a,x86,x86_64}"
+echo "========================================="
