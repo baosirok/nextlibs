@@ -91,26 +91,33 @@ function buildLibVpx() {
   pushd $VPX_DIR
 
   VPX_AS=${TOOLCHAIN_PREFIX}/bin/llvm-as
+  
   for ABI in $ANDROID_ABIS; do
+    echo "Building libvpx for $ABI..."
+    
     case $ABI in
     armeabi-v7a)
-      # 启用 NEON，Android armeabi-v7a 保证支持
       EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
       TOOLCHAIN=armv7a-linux-androideabi21-
+      # 添加 cpu-features 支持
+      EXTRA_CFLAGS="-I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
       ;;
     arm64-v8a)
       EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc"
       TOOLCHAIN=aarch64-linux-android21-
+      EXTRA_CFLAGS="-I${ANDROID_NDK_HOME}/sources/android/cpufeatures"
       ;;
     x86)
       EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
       VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=i686-linux-android21-
+      EXTRA_CFLAGS=""
       ;;
     x86_64)
       EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --enable-pic"
       VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=x86_64-linux-android21-
+      EXTRA_CFLAGS=""
       ;;
     *)
       echo "Unsupported architecture: $ABI"
@@ -125,6 +132,7 @@ function buildLibVpx() {
       AS=${VPX_AS} \
       STRIP=${TOOLCHAIN_PREFIX}/bin/llvm-strip \
       NM=${TOOLCHAIN_PREFIX}/bin/llvm-nm \
+      CFLAGS="$EXTRA_CFLAGS" \
       LDFLAGS="-Wl,-z,max-page-size=16384" \
       ./configure \
       --prefix=$BUILD_DIR/external/$ABI \
@@ -144,10 +152,23 @@ function buildLibVpx() {
       --enable-runtime-cpu-detect \
       ${EXTRA_BUILD_FLAGS}
 
+    if [ $? -ne 0 ]; then
+      echo "libvpx configure failed for $ABI"
+      exit 1
+    fi
+
     make clean
     make -j$JOBS
+    
+    if [ $? -ne 0 ]; then
+      echo "libvpx build failed for $ABI"
+      exit 1
+    fi
+    
     make install
+    echo "✓ libvpx built successfully for $ABI"
   done
+  
   popd
 }
 
@@ -155,6 +176,7 @@ function buildMbedTLS() {
     pushd $MBEDTLS_DIR
 
     for ABI in $ANDROID_ABIS; do
+      echo "Building mbedTLS for $ABI..."
 
       CMAKE_BUILD_DIR=$MBEDTLS_DIR/mbedtls_build_${ABI}
       rm -rf ${CMAKE_BUILD_DIR}
@@ -169,10 +191,22 @@ function buildMbedTLS() {
        -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
        -DENABLE_TESTING=0
 
-      make -j$JOBS
-      make install
+      if [ $? -ne 0 ]; then
+        echo "mbedTLS configure failed for $ABI"
+        exit 1
+      fi
 
+      make -j$JOBS
+      
+      if [ $? -ne 0 ]; then
+        echo "mbedTLS build failed for $ABI"
+        exit 1
+      fi
+      
+      make install
+      echo "✓ mbedTLS built successfully for $ABI"
     done
+    
     popd
 }
 
@@ -187,6 +221,8 @@ function buildFfmpeg() {
   done
 
   for ABI in $ANDROID_ABIS; do
+    echo "Building FFmpeg for $ABI..."
+    
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
     EXTRA_CFLAGS=""
 
@@ -196,21 +232,21 @@ function buildFfmpeg() {
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      # ARMv7 + NEON 优化（Android armeabi-v7a 保证支持 NEON）
+      # ARMv7 + NEON 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=armv7-a -mfpu=neon -mfloat-abi=softfp -ftree-vectorize -fomit-frame-pointer"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      # ARMv8 优化，启用高级 SIMD
+      # ARMv8 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=armv8-a -ftree-vectorize -fomit-frame-pointer"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
       CPU=i686
       ARCH=i686
-      # x86 优化，启用 SSE3
+      # x86 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=i686 -msse3 -mssse3 -mfpmath=sse -ftree-vectorize"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm"
       ;;
@@ -218,7 +254,7 @@ function buildFfmpeg() {
       TOOLCHAIN=x86_64-linux-android21-
       CPU=x86_64
       ARCH=x86_64
-      # x86_64 优化，启用 SSE4.2
+      # x86_64 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse -ftree-vectorize -fomit-frame-pointer"
       ;;
     *)
@@ -233,7 +269,7 @@ function buildFfmpeg() {
 
     echo "Configuring FFmpeg for $ABI with audio performance optimizations..."
     
-    # 配置 FFmpeg
+    # 配置 FFmpeg（移除 --disable-aacps，FFmpeg 6.0 不支持此选项）
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -277,7 +313,6 @@ function buildFfmpeg() {
       --enable-pic \
       --disable-debug \
       --disable-stripping \
-      --disable-aacps \
       --extra-ldexeflags=-pie \
       ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
       ${COMMON_OPTIONS}
@@ -303,7 +338,7 @@ function buildFfmpeg() {
     OUTPUT_LIB=${OUTPUT_DIR}/lib/${ABI}
     mkdir -p "${OUTPUT_LIB}"
     
-    # 手动 strip 库文件
+    # 手动 strip 库文件以减小体积
     for so in "${BUILD_DIR}"/"${ABI}"/lib/*.so; do
       if [ -f "$so" ]; then
         ${TOOLCHAIN_PREFIX}/bin/llvm-strip --strip-unneeded "$so"
@@ -338,8 +373,20 @@ if [[ ! -d "$OUTPUT_DIR" && ! -d "$BUILD_DIR" ]]; then
     downloadFfmpeg
   fi
 
+  echo "========================================"
+  echo "Building dependencies with optimizations"
+  echo "========================================"
+  
   # Building library
   buildMbedTLS
   buildLibVpx
   buildFfmpeg
+  
+  echo ""
+  echo "========================================"
+  echo "✓ Build completed successfully!"
+  echo "========================================"
+  echo "Output directory: $OUTPUT_DIR"
+  echo "Libraries: $OUTPUT_DIR/lib/"
+  echo "Headers: $OUTPUT_DIR/include/"
 fi
