@@ -176,7 +176,6 @@ function buildMbedTLS() {
 }
 
 function buildFfmpeg() {
-  pushd $FFMPEG_DIR
   EXTRA_BUILD_CONFIGURATION_FLAGS=""
   EXTRA_CFLAGS=""
   COMMON_OPTIONS=""
@@ -188,6 +187,16 @@ function buildFfmpeg() {
 
   # Build FFmpeg for each architecture and platform
   for ABI in $ANDROID_ABIS; do
+
+    # 为每个 ABI 创建独立的构建目录
+    FFMPEG_BUILD_DIR=$BUILD_DIR/ffmpeg-build-$ABI
+    rm -rf $FFMPEG_BUILD_DIR
+    mkdir -p $FFMPEG_BUILD_DIR
+    
+    # 复制源码到构建目录
+    cp -r $FFMPEG_DIR/* $FFMPEG_BUILD_DIR/
+    
+    pushd $FFMPEG_BUILD_DIR
 
     # Reset extra flags for each ABI
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
@@ -283,7 +292,6 @@ function buildFfmpeg() {
 
     # Build FFmpeg
     echo "Building FFmpeg for $ARCH..."
-    make clean
     make -j$JOBS
     make install
 
@@ -295,9 +303,10 @@ function buildFfmpeg() {
     mkdir -p "${OUTPUT_HEADERS}"
     cp -r "${BUILD_DIR}"/"${ABI}"/include/* "${OUTPUT_HEADERS}"
 
+    popd
   done
-  popd
 }
+
 
 # Download mbedtls source code if it doesn't exist
 if [[ ! -d "$MBEDTLS_DIR" ]]; then
