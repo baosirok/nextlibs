@@ -3,7 +3,6 @@ name: Build nextlib
 on:
   workflow_dispatch:
 
-
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -25,8 +24,21 @@ jobs:
           java-version: 17
           distribution: temurin
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Build FFmpeg libraries
+        run: |
+          cd ffmpeg
+          chmod +x setup.sh
+          ./setup.sh
+        env:
+          ANDROID_SDK_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+          ANDROID_CMAKE_VERSION: 3.22.1
 
       - name: Build Project
         run: ./gradlew :media3ext:assembleRelease
