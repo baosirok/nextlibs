@@ -6,7 +6,7 @@ MBEDTLS_VERSION=3.4.1
 FFMPEG_VERSION=6.0
 
 # Directories
-BASE_DIR=$(cd "$(dirname "$0")" && pwd)
+BASE_DIR=$(cd "$(dirname "\$0")" && pwd)
 BUILD_DIR=$BASE_DIR/build
 OUTPUT_DIR=$BASE_DIR/output
 SOURCES_DIR=$BASE_DIR/sources
@@ -18,7 +18,7 @@ MBEDTLS_DIR=$SOURCES_DIR/mbedtls-$MBEDTLS_VERSION
 ANDROID_ABIS="x86 x86_64 armeabi-v7a arm64-v8a"
 ANDROID_PLATFORM=21
 ENABLED_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd h264 hevc mpeg2video mpegvideo libvpx_vp8 libvpx_vp9"
-JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.pysicalcpu || echo 4)
+JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.physicalcpu || echo 4)
 
 # Set up host platform variables
 HOST_PLATFORM="linux-x86_64"
@@ -39,11 +39,9 @@ CMAKE_EXECUTABLE="${ANDROID_SDK_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake"
 
 # Check if sdkmanager is in PATH
 if command -v sdkmanager &> /dev/null; then
-  # Use sdkmanager from PATH
   echo "Using sdkmanager from PATH"
   echo y | sdkmanager --sdk_root="${ANDROID_SDK_HOME}" "cmake;${ANDROID_CMAKE_VERSION}"
 else
-  # Use sdkmanager from Android SDK
   SDKMANAGER_EXECUTABLE="${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager"
   if [[ -x "$SDKMANAGER_EXECUTABLE" ]]; then
     echo "Using sdkmanager from Android SDK"
@@ -94,10 +92,10 @@ function buildLibVpx() {
 
   VPX_AS=${TOOLCHAIN_PREFIX}/bin/llvm-as
   for ABI in $ANDROID_ABIS; do
-    # Set up environment variables
     case $ABI in
     armeabi-v7a)
-      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc --disable-neon"
+      # 启用 NEON，Android armeabi-v7a 保证支持
+      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
       TOOLCHAIN=armv7a-linux-androideabi21-
       ;;
     arm64-v8a)
@@ -105,12 +103,12 @@ function buildLibVpx() {
       TOOLCHAIN=aarch64-linux-android21-
       ;;
     x86)
-      EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
+      EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
       VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=i686-linux-android21-
       ;;
     x86_64)
-      EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic --disable-neon --disable-neon-asm"
+      EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --enable-pic"
       VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=x86_64-linux-android21-
       ;;
@@ -143,7 +141,7 @@ function buildLibVpx() {
       --disable-webm-io \
       --disable-libyuv \
       --enable-better-hw-compatibility \
-      --disable-runtime-cpu-detect \
+      --enable-runtime-cpu-detect \
       ${EXTRA_BUILD_FLAGS}
 
     make clean
@@ -180,57 +178,62 @@ function buildMbedTLS() {
 
 function buildFfmpeg() {
   pushd $FFMPEG_DIR
-  
-  COMMON_OPTIONS=""
-  
- # 音频解码器 - 移除可能有问题的编码器
-  ALL_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd pcm_s16le pcm_s24le pcm_f32le"
-    
-  for decoder in $ALL_DECODERS; do
-    COMMON_OPTIONS="${COMMON_OPTIONS} --enable-decoder=${decoder}"
-  done
 
-  # 额外启用编码器
-  for encoder in aac ac3 eac3 mp3lame vorbis opus; do
-    COMMON_OPTIONS="${COMMON_OPTIONS} --enable-encoder=${encoder}"
+  COMMON_OPTIONS=""
+
+  # 添加音频解码器
+  for decoder in $ENABLED_DECODERS; do
+    COMMON_OPTIONS="${COMMON_OPTIONS} --enable-decoder=${decoder}"
   done
 
   for ABI in $ANDROID_ABIS; do
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
-    
+    EXTRA_CFLAGS=""
+
+    # 针对不同架构优化 CFLAGS
     case $ABI in
     armeabi-v7a)
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      EXTRA_CFLAGS="-O3 -fPIC -march=armv7-a -mfpu=neon -mfloat-abi=softfp -ftree-vectorize"
+      # ARMv7 + NEON 优化（Android armeabi-v7a 保证支持 NEON）
+      EXTRA_CFLAGS="-O3 -fPIC -march=armv7-a -mfpu=neon -mfloat-abi=softfp -ftree-vectorize -fomit-frame-pointer"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      EXTRA_CFLAGS="-O3 -fPIC -march=armv8-a -ftree-vectorize"
+      # ARMv8 优化，启用高级 SIMD
+      EXTRA_CFLAGS="-O3 -fPIC -march=armv8-a -ftree-vectorize -fomit-frame-pointer"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
       CPU=i686
       ARCH=i686
-      EXTRA_CFLAGS="-O3 -fPIC -march=i686 -msse3 -mfpmath=sse"
+      # x86 优化，启用 SSE3
+      EXTRA_CFLAGS="-O3 -fPIC -march=i686 -msse3 -mssse3 -mfpmath=sse -ftree-vectorize"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm"
       ;;
     x86_64)
       TOOLCHAIN=x86_64-linux-android21-
       CPU=x86_64
       ARCH=x86_64
-      EXTRA_CFLAGS="-O3 -fPIC -march=x86-64 -msse4.2 -mfpmath=sse"
+      # x86_64 优化，启用 SSE4.2
+      EXTRA_CFLAGS="-O3 -fPIC -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse -ftree-vectorize -fomit-frame-pointer"
+      ;;
+    *)
+      echo "Unsupported architecture: $ABI"
+      exit 1
       ;;
     esac
 
+    # 依赖库路径
     DEP_CFLAGS="-I$BUILD_DIR/external/$ABI/include"
     DEP_LD_FLAGS="-L$BUILD_DIR/external/$ABI/lib"
 
-    echo "Configuring FFmpeg for $ABI ($ARCH)..."
+    echo "Configuring FFmpeg for $ABI with audio performance optimizations..."
     
+    # 配置 FFmpeg
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -270,16 +273,18 @@ function buildFfmpeg() {
       --enable-mdct \
       --enable-rdft \
       --enable-dct \
-      --enable-small \
       --enable-hardcoded-tables \
       --enable-pic \
-      --extra-ldexeflags=-pie \
       --disable-debug \
+      --disable-stripping \
+      --disable-aacps \
+      --extra-ldexeflags=-pie \
       ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
       ${COMMON_OPTIONS}
 
     if [ $? -ne 0 ]; then
       echo "FFmpeg configure failed for $ABI"
+      cat ffbuild/config.log
       exit 1
     fi
 
@@ -294,15 +299,24 @@ function buildFfmpeg() {
     
     make install
 
+    # 复制库文件
     OUTPUT_LIB=${OUTPUT_DIR}/lib/${ABI}
     mkdir -p "${OUTPUT_LIB}"
-    cp "${BUILD_DIR}"/"${ABI}"/lib/*.so "${OUTPUT_LIB}"
+    
+    # 手动 strip 库文件
+    for so in "${BUILD_DIR}"/"${ABI}"/lib/*.so; do
+      if [ -f "$so" ]; then
+        ${TOOLCHAIN_PREFIX}/bin/llvm-strip --strip-unneeded "$so"
+        cp "$so" "${OUTPUT_LIB}/"
+      fi
+    done
 
+    # 复制头文件
     OUTPUT_HEADERS=${OUTPUT_DIR}/include/${ABI}
     mkdir -p "${OUTPUT_HEADERS}"
     cp -r "${BUILD_DIR}"/"${ABI}"/include/* "${OUTPUT_HEADERS}"
     
-    echo "✓ FFmpeg built successfully for $ABI"
+    echo "✓ FFmpeg built successfully for $ABI with audio optimizations"
   done
   
   popd
