@@ -99,25 +99,25 @@ function buildLibVpx() {
     
     case $ABI in
     armeabi-v7a)
-      EXTRA_BUILD_FLAGS="--target=armv7-android-gcc --disable-runtime-cpu-detect"
+      VPX_TARGET="armv7-android-gcc"
       TOOLCHAIN_NAME=armv7a-linux-androideabi21
       BUILD_CFLAGS="-O3 -march=armv7-a -mfpu=neon -mfloat-abi=softfp"
       USE_YASM=false
       ;;
     arm64-v8a)
-      EXTRA_BUILD_FLAGS="--target=armv8-android-gcc --disable-runtime-cpu-detect"
+      VPX_TARGET="arm64-android-gcc"
       TOOLCHAIN_NAME=aarch64-linux-android21
       BUILD_CFLAGS="-O3 -march=armv8-a"
       USE_YASM=false
       ;;
     x86)
-      EXTRA_BUILD_FLAGS="--target=x86-android-gcc --disable-sse4_1 --disable-avx --disable-avx2"
+      VPX_TARGET="x86-android-gcc"
       TOOLCHAIN_NAME=i686-linux-android21
       BUILD_CFLAGS="-O3 -march=i686"
       USE_YASM=true
       ;;
     x86_64)
-      EXTRA_BUILD_FLAGS="--target=x86_64-android-gcc"
+      VPX_TARGET="x86_64-android-gcc"
       TOOLCHAIN_NAME=x86_64-linux-android21
       BUILD_CFLAGS="-O3 -march=x86-64"
       USE_YASM=true
@@ -152,7 +152,8 @@ function buildLibVpx() {
     ./configure \
       --prefix="${BUILD_DIR}/external/${ABI}" \
       --libc="${TOOLCHAIN_PREFIX}/sysroot" \
-      ${EXTRA_BUILD_FLAGS} \
+      --target="${VPX_TARGET}" \
+      --disable-runtime-cpu-detect \
       --enable-vp8 \
       --enable-vp9 \
       --enable-static \
@@ -177,13 +178,7 @@ function buildLibVpx() {
     fi
 
     make clean
-    
-    # 为 x86 构建时显示详细输出以便调试
-    if [ "$USE_YASM" = true ]; then
-      make -j$JOBS V=1
-    else
-      make -j$JOBS
-    fi
+    make -j$JOBS
     
     if [ $? -ne 0 ]; then
       echo "libvpx build failed for $ABI"
@@ -200,6 +195,7 @@ function buildLibVpx() {
   
   popd
 }
+
 
 
 
