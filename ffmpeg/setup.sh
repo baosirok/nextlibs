@@ -141,7 +141,7 @@ function buildLibVpx() {
 
     ./configure \
       --prefix="${BUILD_DIR}/external/${ABI}" \
-      --sdk-path="${TOOLCHAIN_PREFIX}/sysroot" \
+      --libc="${TOOLCHAIN_PREFIX}/sysroot" \
       ${EXTRA_BUILD_FLAGS} \
       --enable-vp8 \
       --enable-vp9 \
@@ -162,7 +162,7 @@ function buildLibVpx() {
 
     if [ $? -ne 0 ]; then
       echo "libvpx configure failed for $ABI"
-      cat config.log
+      [ -f config.log ] && cat config.log
       exit 1
     fi
 
