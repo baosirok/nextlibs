@@ -263,21 +263,18 @@ function buildFfmpeg() {
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      # ARMv7 + NEON 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=armv7-a -mfpu=neon -mfloat-abi=softfp -ftree-vectorize -fomit-frame-pointer"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      # ARMv8 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=armv8-a -ftree-vectorize -fomit-frame-pointer"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
       CPU=i686
       ARCH=i686
-      # x86 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=i686 -msse3 -mssse3 -mfpmath=sse -ftree-vectorize"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm"
       ;;
@@ -285,7 +282,6 @@ function buildFfmpeg() {
       TOOLCHAIN=x86_64-linux-android21-
       CPU=x86_64
       ARCH=x86_64
-      # x86_64 优化
       EXTRA_CFLAGS="-O3 -fPIC -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse -ftree-vectorize -fomit-frame-pointer"
       ;;
     *)
@@ -340,7 +336,7 @@ function buildFfmpeg() {
       --enable-mdct \
       --enable-rdft \
       --enable-dct \
-      --enable-hardcoded-tables \
+      --disable-hardcoded-tables \
       --enable-pic \
       --disable-debug \
       --disable-stripping \
@@ -387,6 +383,7 @@ function buildFfmpeg() {
   
   popd
 }
+
 
 # 主构建流程
 if [[ ! -d "$OUTPUT_DIR" && ! -d "$BUILD_DIR" ]]; then
