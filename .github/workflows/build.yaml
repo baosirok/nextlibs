@@ -23,6 +23,11 @@ jobs:
           java-version: 17
           distribution: temurin
 
+      - name: Install NASM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
