@@ -1,6 +1,6 @@
 #!/bin/bash
-set -e  # 遇到错误立即退出
-set -u  # 使用未定义变量时报错
+set -e
+set -u
 
 # Versions
 VPX_VERSION=1.13.0
@@ -38,6 +38,14 @@ esac
 # Build tools
 TOOLCHAIN_PREFIX="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/${HOST_PLATFORM}"
 CMAKE_EXECUTABLE="${ANDROID_SDK_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake"
+
+# Verify NDK toolchain exists
+if [[ ! -d "$TOOLCHAIN_PREFIX" ]]; then
+  echo "ERROR: NDK toolchain not found at $TOOLCHAIN_PREFIX"
+  echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+  echo "HOST_PLATFORM: $HOST_PLATFORM"
+  exit 1
+fi
 
 # Check if sdkmanager is in PATH
 if command -v sdkmanager &> /dev/null; then
@@ -98,7 +106,7 @@ function buildLibVpx() {
     echo "Building libvpx for $ABI..."
     echo "========================================="
     
-    # 关键修复：每次循环前彻底清理
+    # 彻底清理
     make distclean 2>/dev/null || true
     rm -f .config.mk config.log 2>/dev/null || true
     
@@ -127,9 +135,17 @@ function buildLibVpx() {
       ;;
     esac
 
-    CC=${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang \
-      CXX=${CC}++ \
-      LD=${CC} \
+    # 验证编译器存在
+    COMPILER="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang"
+    if [[ ! -x "$COMPILER" ]]; then
+      echo "ERROR: Compiler not found: $COMPILER"
+      exit 1
+    fi
+    echo "Using compiler: $COMPILER"
+
+    CC=${COMPILER} \
+      CXX=${COMPILER}++ \
+      LD=${COMPILER} \
       AR=${TOOLCHAIN_PREFIX}/bin/llvm-ar \
       AS=${VPX_AS} \
       STRIP=${TOOLCHAIN_PREFIX}/bin/llvm-strip \
@@ -153,7 +169,6 @@ function buildLibVpx() {
       --disable-runtime-cpu-detect \
       ${EXTRA_BUILD_FLAGS}
 
-    # 错误检查
     if [ $? -ne 0 ]; then
       echo "ERROR: libvpx configure failed for $ABI"
       [ -f config.log ] && cat config.log
@@ -217,8 +232,6 @@ function buildMbedTLS() {
 }
 
 function buildFfmpeg() {
-  EXTRA_BUILD_CONFIGURATION_FLAGS=""
-  EXTRA_CFLAGS=""
   COMMON_OPTIONS=""
 
   # Add enabled decoders to FFmpeg build configuration
@@ -253,46 +266,68 @@ function buildFfmpeg() {
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      # 启用 NEON SIMD 优化（ARM 音频解码加速）
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -mfpu=neon -mfloat-abi=softfp -mvectorize-with-neon-quad"
+      # 简化 CFLAGS，移除可能不被支持的标志
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      # ARM64 自动支持 NEON，添加更激进的优化
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a+crypto -mtune=cortex-a53"
+      # 移除 +crypto 和 -mtune，保持兼容性
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
       CPU=i686
       ARCH=i686
-      # x86 启用 SSE 优化
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=i686 -msse3 -mssse3 -mfpmath=sse -ftree-vectorize"
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=i686 -msse3 -mssse3 -mfpmath=sse"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm"
       ;;
     x86_64)
       TOOLCHAIN=x86_64-linux-android21-
       CPU=x86_64
       ARCH=x86_64
-      # x86_64 启用 SSE4.2 和 AVX 优化
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse -ftree-vectorize"
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-x86asm"
       ;;
-    *)
+        *)
       echo "Unsupported architecture: $ABI"
       exit 1
       ;;
     esac
 
-    # 通用音频解码优化 flags
-    EXTRA_CFLAGS="$EXTRA_CFLAGS -ffast-math -fomit-frame-pointer -fstrict-aliasing"
+    # 通用优化 flags
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -ffast-math -fomit-frame-pointer"
 
     # Referencing dependencies without pkgconfig
     DEP_CFLAGS="-I$BUILD_DIR/external/$ABI/include"
     DEP_LD_FLAGS="-L$BUILD_DIR/external/$ABI/lib"
+
+    # 验证编译器存在
+    COMPILER="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang"
+    if [[ ! -x "$COMPILER" ]]; then
+      echo "ERROR: Compiler not found: $COMPILER"
+      exit 1
+    fi
+    echo "Using compiler: $COMPILER"
+
+    # 测试编译器是否工作
+    echo "Testing compiler..."
+    cat > test.c << EOF
+int main() { return 0; }
+EOF
+    if ! $COMPILER $EXTRA_CFLAGS test.c -o test 2>/dev/null; then
+      echo "ERROR: Compiler test failed with flags: $EXTRA_CFLAGS"
+      echo "Trying basic compilation..."
+      $COMPILER test.c -o test || {
+        echo "ERROR: Basic compiler test failed"
+        exit 1
+      }
+    fi
+    rm -f test.c test
+    echo "Compiler test passed"
 
     # Configure FFmpeg build
     ./configure \
@@ -337,7 +372,9 @@ function buildFfmpeg() {
 
     if [ $? -ne 0 ]; then
       echo "ERROR: FFmpeg configure failed for $ABI"
-      cat ffbuild/config.log
+      echo "======== Config Log ========"
+      cat ffbuild/config.log || echo "No config.log found"
+      echo "============================"
       exit 1
     fi
 
@@ -354,7 +391,14 @@ function buildFfmpeg() {
 
     OUTPUT_LIB=${OUTPUT_DIR}/lib/${ABI}
     mkdir -p "${OUTPUT_LIB}"
-    cp "${BUILD_DIR}"/"${ABI}"/lib/*.so "${OUTPUT_LIB}"
+    
+    # Strip libraries before copying
+    for so in "${BUILD_DIR}"/"${ABI}"/lib/*.so; do
+      if [ -f "$so" ]; then
+        ${TOOLCHAIN_PREFIX}/bin/llvm-strip --strip-unneeded "$so"
+        cp "$so" "${OUTPUT_LIB}/"
+      fi
+    done
 
     OUTPUT_HEADERS=${OUTPUT_DIR}/include/${ABI}
     mkdir -p "${OUTPUT_HEADERS}"
@@ -372,6 +416,8 @@ echo "========================================="
 echo "Starting build process"
 echo "Target ABIs: $ANDROID_ABIS"
 echo "Jobs: $JOBS"
+echo "NDK: $ANDROID_NDK_HOME"
+echo "Toolchain: $TOOLCHAIN_PREFIX"
 echo "========================================="
 echo ""
 
@@ -407,4 +453,11 @@ echo "========================================="
 echo "Output directory: $OUTPUT_DIR"
 echo "Libraries: $OUTPUT_DIR/lib/{armeabi-v7a,arm64-v8a,x86,x86_64}"
 echo "Headers: $OUTPUT_DIR/include/{armeabi-v7a,arm64-v8a,x86,x86_64}"
+echo ""
+echo "Library details:"
+for ABI in $ANDROID_ABIS; do
+  echo "  $ABI:"
+  ls -lh "${OUTPUT_DIR}/lib/${ABI}/"*.so 2>/dev/null | awk '{print "    " \$9 " - " \$5}'
+done
 echo "========================================="
+
