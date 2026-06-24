@@ -6,7 +6,7 @@ MBEDTLS_VERSION=3.4.1
 FFMPEG_VERSION=6.0
 
 # Directories
-BASE_DIR=$(cd "$(dirname "$0")" && pwd)
+BASE_DIR=$(cd "$(dirname "\$0")" && pwd)
 BUILD_DIR=$BASE_DIR/build
 OUTPUT_DIR=$BASE_DIR/output
 SOURCES_DIR=$BASE_DIR/sources
@@ -39,11 +39,9 @@ CMAKE_EXECUTABLE="${ANDROID_SDK_HOME}/cmake/${ANDROID_CMAKE_VERSION}/bin/cmake"
 
 # Check if sdkmanager is in PATH
 if command -v sdkmanager &> /dev/null; then
-  # Use sdkmanager from PATH
   echo "Using sdkmanager from PATH"
   echo y | sdkmanager --sdk_root="${ANDROID_SDK_HOME}" "cmake;${ANDROID_CMAKE_VERSION}"
 else
-  # Use sdkmanager from Android SDK
   SDKMANAGER_EXECUTABLE="${ANDROID_SDK_HOME}/cmdline-tools/latest/bin/sdkmanager"
   if [[ -x "$SDKMANAGER_EXECUTABLE" ]]; then
     echo "Using sdkmanager from Android SDK"
@@ -94,7 +92,6 @@ function buildLibVpx() {
 
   VPX_AS=${TOOLCHAIN_PREFIX}/bin/llvm-as
   for ABI in $ANDROID_ABIS; do
-    # Set up environment variables
     case $ABI in
     armeabi-v7a)
       EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc --disable-neon"
@@ -181,6 +178,7 @@ function buildMbedTLS() {
 function buildFfmpeg() {
   pushd $FFMPEG_DIR
   EXTRA_BUILD_CONFIGURATION_FLAGS=""
+  EXTRA_CFLAGS=""
   COMMON_OPTIONS=""
 
   # Add enabled decoders to FFmpeg build configuration
@@ -191,34 +189,52 @@ function buildFfmpeg() {
   # Build FFmpeg for each architecture and platform
   for ABI in $ANDROID_ABIS; do
 
+    # Reset extra flags for each ABI
+    EXTRA_BUILD_CONFIGURATION_FLAGS=""
+    EXTRA_CFLAGS="-O3 -fPIC"
+
     # Set up environment variables
     case $ABI in
     armeabi-v7a)
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
+      # 启用 NEON SIMD 优化（ARM 音频解码加速）
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -mfpu=neon -mfloat-abi=softfp -mvectorize-with-neon-quad"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
+      # ARM64 自动支持 NEON，添加更激进的优化
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a+crypto -mtune=cortex-a53"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
       CPU=i686
       ARCH=i686
-      EXTRA_BUILD_CONFIGURATION_FLAGS=--disable-asm
+      # x86 启用 SSE 优化
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=i686 -msse3 -mssse3 -mfpmath=sse -ftree-vectorize"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-asm"
       ;;
     x86_64)
       TOOLCHAIN=x86_64-linux-android21-
       CPU=x86_64
       ARCH=x86_64
+      # x86_64 启用 SSE4.2 和 AVX 优化
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse -ftree-vectorize"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-x86asm"
       ;;
     *)
       echo "Unsupported architecture: $ABI"
       exit 1
       ;;
     esac
+
+    # 通用音频解码优化 flags
+    EXTRA_CFLAGS="$EXTRA_CFLAGS -ffast-math -fomit-frame-pointer -fstrict-aliasing"
 
     # Referencing dependencies without pkgconfig
     DEP_CFLAGS="-I$BUILD_DIR/external/$ABI/include"
@@ -235,7 +251,7 @@ function buildFfmpeg() {
       --ar="${TOOLCHAIN_PREFIX}/bin/llvm-ar" \
       --ranlib="${TOOLCHAIN_PREFIX}/bin/llvm-ranlib" \
       --strip="${TOOLCHAIN_PREFIX}/bin/llvm-strip" \
-      --extra-cflags="-O3 -fPIC $DEP_CFLAGS" \
+      --extra-cflags="$EXTRA_CFLAGS $DEP_CFLAGS" \
       --extra-ldflags="$DEP_LD_FLAGS -Wl,-z,max-page-size=16384" \
       --pkg-config="$(which pkg-config)" \
       --target-os=android \
@@ -246,7 +262,6 @@ function buildFfmpeg() {
       --disable-everything \
       --disable-vulkan \
       --disable-avdevice \
-      --disable-avformat \
       --disable-postproc \
       --disable-avfilter \
       --disable-symver \
@@ -260,6 +275,9 @@ function buildFfmpeg() {
       --enable-mbedtls \
       --extra-ldexeflags=-pie \
       --disable-debug \
+      --enable-optimizations \
+      --enable-small \
+      --enable-runtime-cpudetect \
       ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
       ${COMMON_OPTIONS}
 
@@ -281,8 +299,6 @@ function buildFfmpeg() {
   popd
 }
 
-if [[ ! -d "$OUTPUT_DIR" && ! -d "$BUILD_DIR" ]]; then
-  # Download MbedTLS source code if it doesn't exist
   if [[ ! -d "$MBEDTLS_DIR" ]]; then
     downloadMbedTLS
   fi
