@@ -234,39 +234,33 @@ function buildMbedTLS() {
 function buildFfmpeg() {
   COMMON_OPTIONS=""
 
-  # Add enabled decoders to FFmpeg build configuration
   for decoder in $ENABLED_DECODERS; do
     COMMON_OPTIONS="${COMMON_OPTIONS} --enable-decoder=${decoder}"
   done
 
-  # Build FFmpeg for each architecture and platform
   for ABI in $ANDROID_ABIS; do
     echo "========================================="
     echo "Building FFmpeg for $ABI..."
     echo "========================================="
 
-    # 为每个 ABI 创建独立的构建目录
     FFMPEG_BUILD_DIR=$BUILD_DIR/ffmpeg-build-$ABI
     rm -rf $FFMPEG_BUILD_DIR
     mkdir -p $FFMPEG_BUILD_DIR
     
-    # 复制源码到构建目录
     echo "Copying FFmpeg source to build directory..."
     cp -r $FFMPEG_DIR/* $FFMPEG_BUILD_DIR/
     
     pushd $FFMPEG_BUILD_DIR
 
-    # Reset extra flags for each ABI
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
-    EXTRA_CFLAGS="-O3 -fPIC"
+    # ✅ 基础安全优化
+    EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer"
 
-    # Set up environment variables
     case $ABI in
     armeabi-v7a)
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      # 简化 CFLAGS，移除可能不被支持的标志
       EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
@@ -274,7 +268,6 @@ function buildFfmpeg() {
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      # 移除 +crypto 和 -mtune，保持兼容性
       EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
@@ -292,20 +285,15 @@ function buildFfmpeg() {
       EXTRA_CFLAGS="$EXTRA_CFLAGS -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-x86asm"
       ;;
-        *)
+    *)
       echo "Unsupported architecture: $ABI"
       exit 1
       ;;
     esac
 
-    # 通用优化 flags
-    EXTRA_CFLAGS="$EXTRA_CFLAGS -ffast-math -fomit-frame-pointer"
-
-    # Referencing dependencies without pkgconfig
     DEP_CFLAGS="-I$BUILD_DIR/external/$ABI/include"
     DEP_LD_FLAGS="-L$BUILD_DIR/external/$ABI/lib"
 
-    # 验证编译器存在
     COMPILER="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang"
     if [[ ! -x "$COMPILER" ]]; then
       echo "ERROR: Compiler not found: $COMPILER"
@@ -313,23 +301,6 @@ function buildFfmpeg() {
     fi
     echo "Using compiler: $COMPILER"
 
-    # 测试编译器是否工作
-    echo "Testing compiler..."
-    cat > test.c << EOF
-int main() { return 0; }
-EOF
-    if ! $COMPILER $EXTRA_CFLAGS test.c -o test 2>/dev/null; then
-      echo "ERROR: Compiler test failed with flags: $EXTRA_CFLAGS"
-      echo "Trying basic compilation..."
-      $COMPILER test.c -o test || {
-        echo "ERROR: Basic compiler test failed"
-        exit 1
-      }
-    fi
-    rm -f test.c test
-    echo "Compiler test passed"
-
-    # Configure FFmpeg build
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -372,13 +343,10 @@ EOF
 
     if [ $? -ne 0 ]; then
       echo "ERROR: FFmpeg configure failed for $ABI"
-      echo "======== Config Log ========"
       cat ffbuild/config.log || echo "No config.log found"
-      echo "============================"
       exit 1
     fi
 
-    # Build FFmpeg
     echo "Building FFmpeg for $ARCH..."
     make -j$JOBS
     
@@ -392,7 +360,6 @@ EOF
     OUTPUT_LIB=${OUTPUT_DIR}/lib/${ABI}
     mkdir -p "${OUTPUT_LIB}"
     
-    # Strip libraries before copying
     for so in "${BUILD_DIR}"/"${ABI}"/lib/*.so; do
       if [ -f "$so" ]; then
         ${TOOLCHAIN_PREFIX}/bin/llvm-strip --strip-unneeded "$so"
@@ -410,6 +377,7 @@ EOF
     echo ""
   done
 }
+
 
 
 echo "========================================="
