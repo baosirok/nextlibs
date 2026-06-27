@@ -249,11 +249,8 @@ function buildMbedTLS() {
 }
 
 function buildFfmpeg() {
-  COMMON_OPTIONS=""
-
-  for decoder in $ENABLED_DECODERS; do
-    COMMON_OPTIONS="${COMMON_OPTIONS} --enable-decoder=${decoder}"
-  done
+  # ⭐ 移除 COMMON_OPTIONS，不再手动指定解码器
+  # 让 FFmpeg 启用所有默认支持的解码器
 
   for ABI in $ANDROID_ABIS; do
     echo "========================================="
@@ -270,7 +267,6 @@ function buildFfmpeg() {
     pushd $FFMPEG_BUILD_DIR
 
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
-    # ✅ 基础安全优化
     EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer"
 
     case $ABI in
@@ -297,10 +293,10 @@ function buildFfmpeg() {
       ;;
     x86_64)
       TOOLCHAIN=x86_64-linux-android21-
-      CPU=x86_64
+      CPU=x86-64
       ARCH=x86_64
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=x86-64 -msse4.2 -mpopcnt -mfpmath=sse"
-      EXTRA_BUILD_CONFIGURATION_FLAGS="--disable-x86asm"
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=x86-64 -mtune=generic"
+      EXTRA_BUILD_CONFIGURATION_FLAGS=""
       ;;
     *)
       echo "Unsupported architecture: $ABI"
@@ -318,7 +314,7 @@ function buildFfmpeg() {
     fi
     echo "Using compiler: $COMPILER"
 
-      # ✅ 移除了 --disable-postproc（FFmpeg 8.1 不支持此选项）
+    # ⭐ 新的 configure：保留所有功能
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -335,31 +331,39 @@ function buildFfmpeg() {
       --target-os=android \
       --enable-shared \
       --disable-static \
+      \
       --disable-doc \
       --disable-programs \
-      --disable-everything \
-      --disable-vulkan \
-      --disable-avdevice \
-      --disable-avfilter \
-      --disable-symver \
-      --enable-parsers \
-      --enable-demuxers \
-      --enable-swresample \
+      --disable-ffmpeg \
+      --disable-ffplay \
+      --disable-ffprobe \
+      \
+      --enable-avcodec \
       --enable-avformat \
+      --enable-avutil \
+      --enable-swresample \
+      --enable-swscale \
+      --enable-avfilter \
+      \
       --enable-libvpx \
-      --enable-protocol=file,http,https,mmsh,mmst,pipe,rtmp,rtmps,rtmpt,rtmpts,rtp,tls \
-      --enable-version3 \
       --enable-mbedtls \
-      --extra-ldexeflags=-pie \
-      --disable-debug \
+      \
+      --enable-protocol=file,http,https,mmsh,mmst,pipe,rtmp,rtmps,rtmpt,rtmpts,rtp,tcp,udp,tls \
+      \
+      --enable-version3 \
+      --enable-pic \
       --enable-optimizations \
-      --enable-small \
       --enable-runtime-cpudetect \
-      ${EXTRA_BUILD_CONFIGURATION_FLAGS} \
-      ${COMMON_OPTIONS}
+      --disable-debug \
+      --disable-symver \
+      --extra-ldexeflags=-pie \
+      ${EXTRA_BUILD_CONFIGURATION_FLAGS}
 
     if [ $? -ne 0 ]; then
       echo "ERROR: FFmpeg configure failed for $ABI"
+      echo "========================================="
+      echo "Dumping config.log..."
+      echo "========================================="
       cat ffbuild/config.log || echo "No config.log found"
       exit 1
     fi
@@ -394,6 +398,7 @@ function buildFfmpeg() {
     echo ""
   done
 }
+
 
 # ========================================
 # 主构建流程
