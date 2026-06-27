@@ -307,7 +307,7 @@ function buildFfmpeg() {
 
     echo "Configuring custom FFmpeg for $ABI..."
     
-       # 配置 FFmpeg（续）
+    # ✅ 配置 FFmpeg（移除了 --disable-postproc）
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -329,7 +329,6 @@ function buildFfmpeg() {
       --disable-everything \
       --disable-vulkan \
       --disable-avdevice \
-      --disable-postproc \
       --disable-avfilter \
       --disable-symver \
       --enable-parsers \
@@ -357,7 +356,7 @@ function buildFfmpeg() {
 
     if [ $? -ne 0 ]; then
       echo "FFmpeg configure failed for $ABI"
-      cat ffbuild/config.log
+      cat ffbuild/config.log 2>/dev/null || echo "No config.log available"
       exit 1
     fi
 
@@ -389,11 +388,12 @@ function buildFfmpeg() {
     mkdir -p "${OUTPUT_HEADERS}"
     cp -r "${BUILD_DIR}"/"${ABI}"/include/* "${OUTPUT_HEADERS}"
     
-    echo "✓ Custom FFmpeg built successfully for $ABI"
+    echo "✅ Custom FFmpeg built successfully for $ABI"
   done
   
   popd
 }
+
 
 # ========================================
 # 主构建流程
