@@ -117,7 +117,7 @@ public final class FfmpegVideoRenderer extends DecoderVideoRenderer {
         } else {
             return RendererCapabilities.create(
                     C.FORMAT_HANDLED,
-                    ADAPTIVE_SEAMLESS,
+                    NOT_SEAMLESS,
                     TUNNELING_NOT_SUPPORTED);
         }
     }
