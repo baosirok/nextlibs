@@ -48,7 +48,7 @@ public class NextRenderersFactory extends DefaultRenderersFactory {
         if (extensionRendererMode == EXTENSION_RENDERER_MODE_OFF) return;
 
         int extensionRendererIndex = out.size();
-        if (extensionRendererMode == EXTENSION_RENDERER_MODE_PREFER || audioPrefer) extensionRendererIndex--;
+        if (audioPrefer) extensionRendererIndex--;
 
         try {
             Renderer renderer = new FfmpegAudioRenderer(eventHandler, eventListener, audioSink);
@@ -65,7 +65,7 @@ public class NextRenderersFactory extends DefaultRenderersFactory {
         if (extensionRendererMode == EXTENSION_RENDERER_MODE_OFF) return;
 
         int extensionRendererIndex = out.size();
-        if (extensionRendererMode == EXTENSION_RENDERER_MODE_PREFER || videoPrefer) extensionRendererIndex--;
+        if (videoPrefer) extensionRendererIndex--;
 
         try {
             Renderer renderer = new FfmpegVideoRenderer(allowedVideoJoiningTimeMs, eventHandler, eventListener, MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY);
