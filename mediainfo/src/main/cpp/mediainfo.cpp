@@ -86,9 +86,12 @@ void onVideoStreamFound(JNIEnv *env, jobject jMediaInfoBuilder, AVFormatContext 
         rotation %= 360;
         if (rotation < 0) rotation += 360;
     }
-    uint8_t *displaymatrix = av_stream_get_side_data(stream,
-                                                     AV_PKT_DATA_DISPLAYMATRIX,
-                                                     nullptr);
+    const AVPacketSideData *sd = av_packet_side_data_get(
+        stream->codecpar->coded_side_data,
+        stream->codecpar->nb_coded_side_data,
+        AV_PKT_DATA_DISPLAYMATRIX
+    );
+    uint8_t *displaymatrix = sd ? (uint8_t*)sd->data : nullptr;
     if (displaymatrix) {
         double theta = av_display_rotation_get((int32_t *) displaymatrix);
         rotation = (int) (-theta) % 360;
