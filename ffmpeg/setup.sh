@@ -5,7 +5,7 @@ set -u
 # Versions
 VPX_VERSION=1.13.0
 MBEDTLS_VERSION=3.4.1
-FFMPEG_VERSION=6.0
+FFMPEG_VERSION=8.1  # ← 改成你的版本
 
 # Directories
 BASE_DIR=$(cd "$(dirname "\$0")" && pwd)
@@ -86,14 +86,31 @@ function downloadMbedTLS() {
   popd
 }
 
+# ⭐ 改用你的自定义 FFmpeg 仓库
 function downloadFfmpeg() {
   pushd $SOURCES_DIR
-  echo "Downloading FFmpeg source code of version $FFMPEG_VERSION..."
-  FFMPEG_FILE=ffmpeg-$FFMPEG_VERSION.tar.gz
-  curl -L "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz" -o $FFMPEG_FILE
-  [ -e $FFMPEG_FILE ] || { echo "$FFMPEG_FILE does not exist. Exiting..."; exit 1; }
-  tar -zxf $FFMPEG_FILE
-  rm $FFMPEG_FILE
+  
+  # 如果目录已存在，先删除
+  if [[ -d "$FFMPEG_DIR" ]]; then
+    echo "Removing existing FFmpeg directory..."
+    rm -rf "$FFMPEG_DIR"
+  fi
+  
+  echo "========================================="
+  echo "Cloning custom FFmpeg from baosirok/FFmpeg"
+  echo "Branch: release/8.1"
+  echo "========================================="
+  
+  # 克隆你的 FFmpeg 仓库
+  git clone -b release/8.1 --depth 1 https://github.com/baosirok/FFmpeg.git "$FFMPEG_DIR"
+  
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to clone FFmpeg repository"
+    exit 1
+  fi
+  
+  echo "✓ Custom FFmpeg cloned successfully"
+  echo ""
   popd
 }
 
@@ -240,14 +257,14 @@ function buildFfmpeg() {
 
   for ABI in $ANDROID_ABIS; do
     echo "========================================="
-    echo "Building FFmpeg for $ABI..."
+    echo "Building custom FFmpeg for $ABI..."
     echo "========================================="
 
     FFMPEG_BUILD_DIR=$BUILD_DIR/ffmpeg-build-$ABI
     rm -rf $FFMPEG_BUILD_DIR
     mkdir -p $FFMPEG_BUILD_DIR
     
-    echo "Copying FFmpeg source to build directory..."
+    echo "Copying custom FFmpeg source to build directory..."
     cp -r $FFMPEG_DIR/* $FFMPEG_BUILD_DIR/
     
     pushd $FFMPEG_BUILD_DIR
@@ -301,6 +318,7 @@ function buildFfmpeg() {
     fi
     echo "Using compiler: $COMPILER"
 
+      # ✅ 移除了 --disable-postproc（FFmpeg 8.1 不支持此选项）
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -322,7 +340,6 @@ function buildFfmpeg() {
       --disable-everything \
       --disable-vulkan \
       --disable-avdevice \
-      --disable-postproc \
       --disable-avfilter \
       --disable-symver \
       --enable-parsers \
@@ -347,7 +364,7 @@ function buildFfmpeg() {
       exit 1
     fi
 
-    echo "Building FFmpeg for $ARCH..."
+    echo "Building custom FFmpeg for $ARCH..."
     make -j$JOBS
     
     if [ $? -ne 0 ]; then
@@ -373,19 +390,25 @@ function buildFfmpeg() {
 
     popd
     
-    echo "✓ FFmpeg built successfully for $ABI"
+    echo "✓ Custom FFmpeg built successfully for $ABI"
     echo ""
   done
 }
 
-
+# ========================================
+# 主构建流程
+# ========================================
 
 echo "========================================="
-echo "Starting build process"
+echo "NextLibs Build Script"
+echo "Using CUSTOM FFmpeg from baosirok/FFmpeg"
+echo "========================================="
+echo ""
 echo "Target ABIs: $ANDROID_ABIS"
 echo "Jobs: $JOBS"
 echo "NDK: $ANDROID_NDK_HOME"
 echo "Toolchain: $TOOLCHAIN_PREFIX"
+echo "FFmpeg Version: $FFMPEG_VERSION (custom)"
 echo "========================================="
 echo ""
 
@@ -399,9 +422,13 @@ if [[ ! -d "$VPX_DIR" ]]; then
   downloadLibVpx
 fi
 
-# Download Ffmpeg source code if it doesn't exist
+# Download/Clone custom FFmpeg if it doesn't exist
 if [[ ! -d "$FFMPEG_DIR" ]]; then
   downloadFfmpeg
+else
+  echo "Custom FFmpeg directory already exists at $FFMPEG_DIR"
+  echo "To use the latest version, delete the directory and re-run"
+  echo ""
 fi
 
 # Building library
@@ -411,15 +438,21 @@ buildMbedTLS
 echo "[2/3] Building libvpx..."
 buildLibVpx
 
-echo "[3/3] Building FFmpeg..."
+echo "[3/3] Building custom FFmpeg..."
 buildFfmpeg
 
 echo ""
 echo "========================================="
 echo "✓ Build completed successfully!"
 echo "========================================="
+echo "FFmpeg: Custom build from baosirok/FFmpeg (release/8.1)"
 echo "Output directory: $OUTPUT_DIR"
 echo "Libraries: $OUTPUT_DIR/lib/{armeabi-v7a,arm64-v8a,x86,x86_64}"
 echo "Headers: $OUTPUT_DIR/include/{armeabi-v7a,arm64-v8a,x86,x86_64}"
+echo ""
+echo "Optimizations applied:"
+echo "  - Custom FFmpeg 8.1 with your modifications"
+echo "  - ARMv7/v8: NEON optimizations"
+echo "  - x86/x86_64: SSE optimizations"
+echo "  - Small build size with runtime CPU detection"
 echo "========================================="
-
