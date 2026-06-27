@@ -249,9 +249,6 @@ function buildMbedTLS() {
 }
 
 function buildFfmpeg() {
-  # ⭐ 移除 COMMON_OPTIONS，不再手动指定解码器
-  # 让 FFmpeg 启用所有默认支持的解码器
-
   for ABI in $ANDROID_ABIS; do
     echo "========================================="
     echo "Building custom FFmpeg for $ABI..."
@@ -267,21 +264,21 @@ function buildFfmpeg() {
     pushd $FFMPEG_BUILD_DIR
 
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
-    EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer"
+    EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer -ffast-math -fstrict-aliasing"
 
     case $ABI in
     armeabi-v7a)
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp"
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp -mtune=cortex-a15"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a"
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a -mtune=cortex-a53"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
       ;;
     x86)
@@ -314,7 +311,6 @@ function buildFfmpeg() {
     fi
     echo "Using compiler: $COMPILER"
 
-    # ⭐ 新的 configure：保留所有功能
     ./configure \
       --prefix=$BUILD_DIR/$ABI \
       --enable-cross-compile \
@@ -353,7 +349,7 @@ function buildFfmpeg() {
       --enable-version3 \
       --enable-pic \
       --enable-optimizations \
-      --enable-runtime-cpudetect \
+      --disable-runtime-cpudetect \
       --disable-debug \
       --disable-symver \
       --extra-ldexeflags=-pie \
@@ -398,6 +394,7 @@ function buildFfmpeg() {
     echo ""
   done
 }
+
 
 
 # ========================================
