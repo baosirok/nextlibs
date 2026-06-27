@@ -44,7 +44,12 @@ static int read_rotation_degrees(AVStream *stream) {
         rotation = normalize_rotation(atoi(rotateTag->value));
     }
 
-    uint8_t *displayMatrix = av_stream_get_side_data(stream, AV_PKT_DATA_DISPLAYMATRIX, nullptr);
+    const AVPacketSideData *sd = av_packet_side_data_get(
+        stream->codecpar->coded_side_data,
+        stream->codecpar->nb_coded_side_data,
+        AV_PKT_DATA_DISPLAYMATRIX
+    );
+    uint8_t *displayMatrix = sd ? (uint8_t*)sd->data : nullptr;
     if (displayMatrix) {
         double theta = av_display_rotation_get(reinterpret_cast<int32_t *>(displayMatrix));
         rotation = normalize_rotation(static_cast<int>(-theta));
@@ -235,7 +240,6 @@ static jobject decode_frame_at_time(JNIEnv *env, MediaThumbnailRetrieverContext 
     int64_t targetTimestamp = av_rescale_q(timeUs, AV_TIME_BASE_Q, videoStream->time_base);
     int seekResult = av_seek_frame(context->formatContext, context->videoStreamIndex, targetTimestamp, AVSEEK_FLAG_BACKWARD);
     if (seekResult < 0) {
-        // Failed to seek to the requested timestamp; clean up and return null.
         avcodec_free_context(&codecContext);
         return nullptr;
     }
