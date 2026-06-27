@@ -3,7 +3,6 @@ package io.github.anilbeesetti.nextlib.media3ext.ffdecoder;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-
 import androidx.media3.common.util.Log;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -15,16 +14,12 @@ import androidx.media3.exoplayer.text.SubtitleDecoderFactory;
 import androidx.media3.exoplayer.text.TextOutput;
 import androidx.media3.exoplayer.text.TextRenderer;
 import androidx.media3.exoplayer.video.VideoRendererEventListener;
-
-import java.util.ArrayList;
-
 import io.github.anilbeesetti.nextlib.media3ext.renderer.NextTextRenderer;
+import java.util.ArrayList;
 
 @UnstableApi
 public class NextRenderersFactory extends DefaultRenderersFactory {
-
     public static final String TAG = "NextRenderersFactory";
-
     private boolean audioPrefer;
     private boolean videoPrefer;
 
@@ -45,34 +40,40 @@ public class NextRenderersFactory extends DefaultRenderersFactory {
     @Override
     protected void buildAudioRenderers(Context context, int extensionRendererMode, MediaCodecSelector mediaCodecSelector, boolean enableDecoderFallback, AudioSink audioSink, Handler eventHandler, AudioRendererEventListener eventListener, ArrayList<Renderer> out) {
         super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out);
-        if (extensionRendererMode == EXTENSION_RENDERER_MODE_OFF) return;
+        
+        // ⭐ 只有 audioPrefer = true 时才加载 FFmpeg 音频
+        if (extensionRendererMode != 0 && this.audioPrefer) {
+            int extensionRendererIndex = out.size();
+            // 插到前面（优先使用 FFmpeg）
+            --extensionRendererIndex;
 
-        int extensionRendererIndex = out.size();
-        if (audioPrefer) extensionRendererIndex--;
-
-        try {
-            Renderer renderer = new FfmpegAudioRenderer(eventHandler, eventListener, audioSink);
-            out.add(extensionRendererIndex, renderer);
-            Log.i(TAG, "Loaded FfmpegAudioRenderer.");
-        } catch (Exception e) {
-            throw new RuntimeException("Error instantiating Ffmpeg extension", e);
+            try {
+                Renderer renderer = new FfmpegAudioRenderer(eventHandler, eventListener, audioSink);
+                out.add(extensionRendererIndex, renderer);
+                Log.i(TAG, "Loaded FfmpegAudioRenderer.");
+            } catch (Exception e) {
+                throw new RuntimeException("Error instantiating Ffmpeg extension", e);
+            }
         }
     }
 
     @Override
     protected void buildVideoRenderers(Context context, int extensionRendererMode, MediaCodecSelector mediaCodecSelector, boolean enableDecoderFallback, Handler eventHandler, VideoRendererEventListener eventListener, long allowedVideoJoiningTimeMs, ArrayList<Renderer> out) {
         super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener, allowedVideoJoiningTimeMs, out);
-        if (extensionRendererMode == EXTENSION_RENDERER_MODE_OFF) return;
+        
+        // ⭐ 只有 videoPrefer = true 时才加载 FFmpeg 视频
+        if (extensionRendererMode != 0 && this.videoPrefer) {
+            int extensionRendererIndex = out.size();
+            // 插到前面（优先使用 FFmpeg）
+            --extensionRendererIndex;
 
-        int extensionRendererIndex = out.size();
-        if (videoPrefer) extensionRendererIndex--;
-
-        try {
-            Renderer renderer = new FfmpegVideoRenderer(allowedVideoJoiningTimeMs, eventHandler, eventListener, MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY);
-            out.add(extensionRendererIndex, renderer);
-            Log.i(TAG, "Loaded FfmpegVideoRenderer.");
-        } catch (Exception e) {
-            throw new RuntimeException("Error instantiating Ffmpeg extension", e);
+            try {
+                Renderer renderer = new FfmpegVideoRenderer(allowedVideoJoiningTimeMs, eventHandler, eventListener, 50);
+                out.add(extensionRendererIndex, renderer);
+                Log.i(TAG, "Loaded FfmpegVideoRenderer.");
+            } catch (Exception e) {
+                throw new RuntimeException("Error instantiating Ffmpeg extension", e);
+            }
         }
     }
 
