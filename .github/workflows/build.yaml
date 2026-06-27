@@ -18,31 +18,59 @@ jobs:
         with:
           submodules: recursive
 
-      # ⭐ 关键：安装 NASM
-      - name: Install NASM
-        uses: ilammy/setup-nasm@v1
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y yasm pkg-config
-
       - name: Set Up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: temurin
 
+      # ⭐ 先设置 Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # ⭐ 关键：显式安装 NDK
-      - name: Install Android NDK and CMake
+      # ⭐ 安装 NASM（必须在构建前）
+      - name: Install NASM and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm yasm pkg-config
+          echo "NASM version: $(nasm --version)"
+          echo "YASM version: $(yasm --version)"
+
+      # ⭐ 安装正确版本的 NDK
+      - name: Install Android NDK 27
         run: |
           yes | sdkmanager --licenses || true
           sdkmanager --install "ndk;27.0.12077973" "cmake;3.22.1"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+          
+          NDK_PATH="$ANDROID_HOME/ndk/27.0.12077973"
+          
+          if [[ ! -d "$NDK_PATH" ]]; then
+            echo "ERROR: NDK 27 not found at $NDK_PATH"
+            ls -la "$ANDROID_HOME/ndk/" || true
+            exit 1
+          fi
+          
+          # 设置环境变量
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          
+          echo "✓ NDK 27 installed at $NDK_PATH"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      # ⭐ 验证环境
+      - name: Verify build environment
+        run: |
+          echo "=== Build Environment ==="
+          echo "Java: $(java -version 2>&1 | head -n 1)"
+          echo "NASM: $(which nasm) - $(nasm --version)"
+          echo "YASM: $(which yasm) - $(yasm --version)"
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+          echo "Available NDKs:"
+          ls -la "$ANDROID_HOME/ndk/" || echo "No NDK directory"
 
       - name: Build FFmpeg libraries
         run: |
