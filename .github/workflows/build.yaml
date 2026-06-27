@@ -44,13 +44,22 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager --install "ndk;27.0.12077973" "cmake;3.22.1"
           
+          # ⭐ 改用直接路径
           NDK_PATH="$ANDROID_HOME/ndk/27.0.12077973"
+          
           if [[ ! -d "$NDK_PATH" ]]; then
             echo "ERROR: NDK not found at $NDK_PATH"
+            echo "Listing available NDKs:"
+            ls -la "$ANDROID_HOME/ndk/" || echo "No NDK directory"
             exit 1
           fi
           
+          # 设置到环境变量
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          
+          # ⭐ 同时导出到当前 shell（虽然下一步用不到，但更清晰）
+          export ANDROID_NDK_HOME="$NDK_PATH"
+          
           echo "✓ NDK installed at $NDK_PATH"
 
       - name: Setup Gradle
@@ -63,8 +72,23 @@ jobs:
           
           echo "========================================="
           echo "Starting FFmpeg build..."
-          echo "ANDROID_SDK_HOME: $ANDROID_HOME"
+          echo "ANDROID_SDK_HOME: $ANDROID_SDK_HOME"
           echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
+          
+          # ⭐ 验证 NDK 路径
+          if [[ ! -d "$ANDROID_NDK_HOME" ]]; then
+            echo "ERROR: ANDROID_NDK_HOME not set or invalid"
+            exit 1
+          fi
+          
+          # ⭐ 验证 nasm
+          if ! command -v nasm &> /dev/null; then
+            echo "ERROR: nasm not found in PATH"
+            exit 1
+          fi
+          
+          echo "nasm location: $(which nasm)"
+          echo "nasm version: $(nasm --version)"
           echo "========================================="
           
           ./setup.sh
@@ -82,7 +106,6 @@ jobs:
           name: nextlib-release
           path: ./media3ext/build/outputs/aar/media3ext-release.aar
 
-      # 可选：上传 FFmpeg 库
       - name: Upload FFmpeg libraries
         uses: actions/upload-artifact@v4
         with:
