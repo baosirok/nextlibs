@@ -123,11 +123,13 @@ function buildLibVpx() {
     
     case $ABI in
     armeabi-v7a)
-      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
+      # ⭐ 禁用 NEON 和 NEON 汇编，避免汇编器参数错误
+      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc --disable-neon --disable-neon-asm"
       TOOLCHAIN=armv7a-linux-androideabi21-
       ;;
     arm64-v8a)
-      EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc"
+      # ⭐ 禁用 NEON 和 NEON 汇编，避免汇编器参数错误
+      EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc --disable-neon --disable-neon-asm"
       TOOLCHAIN=aarch64-linux-android21-
       ;;
     x86)
@@ -151,7 +153,7 @@ function buildLibVpx() {
     fi
     echo "Using compiler: $COMPILER"
 
-    # ⭐ 核心修复：不设置 AS，让 libvpx 自动检测
+    # ⭐ 不设置 AS，不传递 CFLAGS 给 libvpx
     CC=${COMPILER} \
       CXX=${COMPILER}++ \
       LD=${COMPILER} \
