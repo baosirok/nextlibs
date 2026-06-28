@@ -66,7 +66,7 @@ public final class FfmpegVideoRenderer extends DecoderVideoRenderer {
                 eventHandler,
                 eventListener,
                 maxDroppedFramesToNotify,
-                /* threads= */ 3,
+                /* threads= */ getRuntime().availableProcessors(),
                 DEFAULT_NUM_OF_INPUT_BUFFERS,
                 DEFAULT_NUM_OF_OUTPUT_BUFFERS);
     }
