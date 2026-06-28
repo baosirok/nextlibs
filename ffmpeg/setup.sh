@@ -113,7 +113,6 @@ function downloadFfmpeg() {
 function buildLibVpx() {
   pushd $VPX_DIR
 
-  VPX_AS=${TOOLCHAIN_PREFIX}/bin/llvm-as
   for ABI in $ANDROID_ABIS; do
     echo "========================================="
     echo "Building libvpx for $ABI..."
@@ -126,19 +125,22 @@ function buildLibVpx() {
     armeabi-v7a)
       EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
       TOOLCHAIN=armv7a-linux-androideabi21-
+      # 对于 ARMv7，使用 llvm-ar 作为汇编器
+      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/llvm-ar"
       ;;
     arm64-v8a)
       EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc"
       TOOLCHAIN=aarch64-linux-android21-
+      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/llvm-ar"
       ;;
     x86)
       EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
+      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/yasm"
       TOOLCHAIN=i686-linux-android21-
       ;;
     x86_64)
       EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
-      VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
+      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/yasm"
       TOOLCHAIN=x86_64-linux-android21-
       ;;
     *)
@@ -153,12 +155,13 @@ function buildLibVpx() {
       exit 1
     fi
     echo "Using compiler: $COMPILER"
+    echo "Using assembler: $AS_EXEC"
 
     CC=${COMPILER} \
       CXX=${COMPILER}++ \
       LD=${COMPILER} \
       AR=${TOOLCHAIN_PREFIX}/bin/llvm-ar \
-      AS=${VPX_AS} \
+      AS=${AS_EXEC} \
       STRIP=${TOOLCHAIN_PREFIX}/bin/llvm-strip \
       NM=${TOOLCHAIN_PREFIX}/bin/llvm-nm \
       LDFLAGS="-Wl,-z,max-page-size=16384" \
@@ -257,7 +260,7 @@ function buildFfmpeg() {
     
     pushd $FFMPEG_BUILD_DIR
 
-    # ⭐优化1：基础的通用优化标志（保留所有解码器，不裁剪）
+    # 基础的通用优化标志（保留所有解码器，不裁剪）
     EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer -ffast-math -fstrict-aliasing -funroll-loops -flto -fno-math-errno"
     EXTRA_LDFLAGS="-flto -Wl,-z,max-page-size=16384"
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
@@ -267,7 +270,6 @@ function buildFfmpeg() {
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      # ⭐优化2：v7 启用 NEON，针对 Cortex-A53 优化（适配大部分盒子）
       EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp -mtune=cortex-a53"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon --enable-asm"
       ;;
@@ -275,7 +277,6 @@ function buildFfmpeg() {
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      # ⭐优化3：ARMv8.2 + dotprod + fp16，适配骁龙865/888/8Gen1/8Gen2/8Gen3
       EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8.2-a+fp16+rcpc+dotprod -mtune=cortex-a76 -mcpu=cortex-a76"
       EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon --enable-asm"
       ;;
