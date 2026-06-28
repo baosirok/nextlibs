@@ -5,10 +5,10 @@ set -u
 # Versions
 VPX_VERSION=1.13.0
 MBEDTLS_VERSION=3.4.1
-FFMPEG_VERSION=8.1  # ← 改成你的版本
+FFMPEG_VERSION=8.1
 
 # Directories
-BASE_DIR=$(cd "$(dirname "\$0")" && pwd)
+BASE_DIR=$(cd "$(dirname "$0")" && pwd)
 BUILD_DIR=$BASE_DIR/build
 OUTPUT_DIR=$BASE_DIR/output
 SOURCES_DIR=$BASE_DIR/sources
@@ -19,7 +19,6 @@ MBEDTLS_DIR=$SOURCES_DIR/mbedtls-$MBEDTLS_VERSION
 # Configuration
 ANDROID_ABIS="armeabi-v7a arm64-v8a"
 ANDROID_PLATFORM=21
-ENABLED_DECODERS="vorbis opus flac alac pcm_mulaw pcm_alaw mp3 amrnb amrwb aac ac3 eac3 dca mlp truehd h264 hevc mpeg2video mpegvideo libvpx_vp8 libvpx_vp9"
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || sysctl -n hw.physicalcpu 2>/dev/null || echo 4)
 
 # Set up host platform variables
@@ -86,11 +85,9 @@ function downloadMbedTLS() {
   popd
 }
 
-# ⭐ 改用你的自定义 FFmpeg 仓库
 function downloadFfmpeg() {
   pushd $SOURCES_DIR
   
-  # 如果目录已存在，先删除
   if [[ -d "$FFMPEG_DIR" ]]; then
     echo "Removing existing FFmpeg directory..."
     rm -rf "$FFMPEG_DIR"
@@ -101,7 +98,6 @@ function downloadFfmpeg() {
   echo "Branch: release/8.1"
   echo "========================================="
   
-  # 克隆你的 FFmpeg 仓库
   git clone -b release/8.1 --depth 1 https://github.com/baosirok/FFmpeg.git "$FFMPEG_DIR"
   
   if [ $? -ne 0 ]; then
@@ -123,13 +119,12 @@ function buildLibVpx() {
     echo "Building libvpx for $ABI..."
     echo "========================================="
     
-    # 彻底清理
     make distclean 2>/dev/null || true
     rm -f .config.mk config.log 2>/dev/null || true
     
     case $ABI in
     armeabi-v7a)
-      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc --disable-neon"
+      EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
       TOOLCHAIN=armv7a-linux-androideabi21-
       ;;
     arm64-v8a)
@@ -142,7 +137,7 @@ function buildLibVpx() {
       TOOLCHAIN=i686-linux-android21-
       ;;
     x86_64)
-      EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic --disable-neon --disable-neon-asm"
+      EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
       VPX_AS=${TOOLCHAIN_PREFIX}/bin/yasm
       TOOLCHAIN=x86_64-linux-android21-
       ;;
@@ -152,7 +147,6 @@ function buildLibVpx() {
       ;;
     esac
 
-    # 验证编译器存在
     COMPILER="${TOOLCHAIN_PREFIX}/bin/${TOOLCHAIN}clang"
     if [[ ! -x "$COMPILER" ]]; then
       echo "ERROR: Compiler not found: $COMPILER"
@@ -263,23 +257,27 @@ function buildFfmpeg() {
     
     pushd $FFMPEG_BUILD_DIR
 
+    # ⭐优化1：基础的通用优化标志（保留所有解码器，不裁剪）
+    EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer -ffast-math -fstrict-aliasing -funroll-loops -flto -fno-math-errno"
+    EXTRA_LDFLAGS="-flto -Wl,-z,max-page-size=16384"
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
-    EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer -ffast-math -fstrict-aliasing"
 
     case $ABI in
     armeabi-v7a)
       TOOLCHAIN=armv7a-linux-androideabi21-
       CPU=armv7-a
       ARCH=arm
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp -mtune=cortex-a15"
-      EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
+      # ⭐优化2：v7 启用 NEON，针对 Cortex-A53 优化（适配大部分盒子）
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv7-a -mfpu=neon -mfloat-abi=softfp -mtune=cortex-a53"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon --enable-asm"
       ;;
     arm64-v8a)
       TOOLCHAIN=aarch64-linux-android21-
       CPU=armv8-a
       ARCH=aarch64
-      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8-a -mtune=cortex-a53"
-      EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon"
+      # ⭐优化3：ARMv8.2 + dotprod + fp16，适配骁龙865/888/8Gen1/8Gen2/8Gen3
+      EXTRA_CFLAGS="$EXTRA_CFLAGS -march=armv8.2-a+fp16+rcpc+dotprod -mtune=cortex-a76 -mcpu=cortex-a76"
+      EXTRA_BUILD_CONFIGURATION_FLAGS="--enable-neon --enable-asm"
       ;;
     x86)
       TOOLCHAIN=i686-linux-android21-
@@ -322,7 +320,7 @@ function buildFfmpeg() {
       --ranlib="${TOOLCHAIN_PREFIX}/bin/llvm-ranlib" \
       --strip="${TOOLCHAIN_PREFIX}/bin/llvm-strip" \
       --extra-cflags="$EXTRA_CFLAGS $DEP_CFLAGS" \
-      --extra-ldflags="$DEP_LD_FLAGS -Wl,-z,max-page-size=16384" \
+      --extra-ldflags="$DEP_LD_FLAGS $EXTRA_LDFLAGS" \
       --pkg-config="$(which pkg-config)" \
       --target-os=android \
       --enable-shared \
@@ -349,7 +347,9 @@ function buildFfmpeg() {
       --enable-version3 \
       --enable-pic \
       --enable-optimizations \
-      --disable-runtime-cpudetect \
+      --enable-asm \
+      --enable-inline-asm \
+      --enable-runtime-cpudetect \
       --disable-debug \
       --disable-symver \
       --extra-ldexeflags=-pie \
@@ -395,14 +395,12 @@ function buildFfmpeg() {
   done
 }
 
-
-
 # ========================================
 # 主构建流程
 # ========================================
 
 echo "========================================="
-echo "NextLibs Build Script"
+echo "NextLibs Build Script (Optimized)"
 echo "Using CUSTOM FFmpeg from baosirok/FFmpeg"
 echo "========================================="
 echo ""
@@ -411,6 +409,12 @@ echo "Jobs: $JOBS"
 echo "NDK: $ANDROID_NDK_HOME"
 echo "Toolchain: $TOOLCHAIN_PREFIX"
 echo "FFmpeg Version: $FFMPEG_VERSION (custom)"
+echo ""
+echo "Optimizations enabled:"
+echo "  - Runtime CPU detection (ARMv8.2+ dotprod/fp16)"
+echo "  - LTO (Link Time Optimization)"
+echo "  - Loop unrolling"
+echo "  - NEON/ASM for ARM"
 echo "========================================="
 echo ""
 
@@ -453,8 +457,9 @@ echo "Libraries: $OUTPUT_DIR/lib/{armeabi-v7a,arm64-v8a,x86,x86_64}"
 echo "Headers: $OUTPUT_DIR/include/{armeabi-v7a,arm64-v8a,x86,x86_64}"
 echo ""
 echo "Optimizations applied:"
-echo "  - Custom FFmpeg 8.1 with your modifications"
-echo "  - ARMv7/v8: NEON optimizations"
-echo "  - x86/x86_64: SSE optimizations"
-echo "  - Small build size with runtime CPU detection"
+echo "  - Runtime CPU detection enabled"
+echo "  - ARMv8.2+ dotprod/fp16 for arm64-v8a"
+echo "  - LTO and loop unrolling"
+echo "  - NEON/ASM enabled for ARM"
+echo "  - All decoders preserved"
 echo "========================================="
