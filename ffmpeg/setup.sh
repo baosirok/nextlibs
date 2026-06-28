@@ -125,22 +125,17 @@ function buildLibVpx() {
     armeabi-v7a)
       EXTRA_BUILD_FLAGS="--force-target=armv7-android-gcc"
       TOOLCHAIN=armv7a-linux-androideabi21-
-      # 对于 ARMv7，使用 llvm-ar 作为汇编器
-      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/llvm-ar"
       ;;
     arm64-v8a)
       EXTRA_BUILD_FLAGS="--force-target=armv8-android-gcc"
       TOOLCHAIN=aarch64-linux-android21-
-      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/llvm-ar"
       ;;
     x86)
       EXTRA_BUILD_FLAGS="--force-target=x86-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
-      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/yasm"
       TOOLCHAIN=i686-linux-android21-
       ;;
     x86_64)
       EXTRA_BUILD_FLAGS="--force-target=x86_64-android-gcc --disable-sse2 --disable-sse3 --disable-ssse3 --disable-sse4_1 --disable-avx --disable-avx2 --enable-pic"
-      AS_EXEC="${TOOLCHAIN_PREFIX}/bin/yasm"
       TOOLCHAIN=x86_64-linux-android21-
       ;;
     *)
@@ -155,13 +150,12 @@ function buildLibVpx() {
       exit 1
     fi
     echo "Using compiler: $COMPILER"
-    echo "Using assembler: $AS_EXEC"
 
+    # ⭐ 核心修复：不设置 AS，让 libvpx 自动检测
     CC=${COMPILER} \
       CXX=${COMPILER}++ \
       LD=${COMPILER} \
       AR=${TOOLCHAIN_PREFIX}/bin/llvm-ar \
-      AS=${AS_EXEC} \
       STRIP=${TOOLCHAIN_PREFIX}/bin/llvm-strip \
       NM=${TOOLCHAIN_PREFIX}/bin/llvm-nm \
       LDFLAGS="-Wl,-z,max-page-size=16384" \
@@ -260,7 +254,6 @@ function buildFfmpeg() {
     
     pushd $FFMPEG_BUILD_DIR
 
-    # 基础的通用优化标志（保留所有解码器，不裁剪）
     EXTRA_CFLAGS="-O3 -fPIC -fomit-frame-pointer -ffast-math -fstrict-aliasing -funroll-loops -flto -fno-math-errno"
     EXTRA_LDFLAGS="-flto -Wl,-z,max-page-size=16384"
     EXTRA_BUILD_CONFIGURATION_FLAGS=""
